@@ -7,5 +7,5 @@ find_package(nlohmann_json REQUIRED)
 
 add_subdirectory(libs/logger)
 add_subdirectory(libs/server)
-add_subdirectory(libs/webapp)
+add_subdirectory(libs/router)
 add_subdirectory(src)

@@ -1,5 +1,5 @@
 add_executable(miniserver main.cpp)
-target_link_libraries(miniserver PRIVATE server webapp logger nlohmann_json::nlohmann_json)
+target_link_libraries(miniserver PRIVATE server router logger nlohmann_json::nlohmann_json)
 
 set(SERVER_CERT_SOURCE "${PROJECT_SOURCE_DIR}/certs/cert.pem"
     CACHE FILEPATH "TLS certificate")
