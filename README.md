@@ -12,6 +12,22 @@
 
 Ответы обработчиков имеют тип `application/json`. Неизвестный маршрут возвращает `404 Not Found`.
 
+## Использование в коде
+
+`ServerApplication` объединяет конфигурацию HTTPS-сервера и регистрацию маршрутов. Добавьте обработчики, вызовите `initialize()`, затем `run()`:
+
+```cpp
+ServerApplication app(4433, SERVER_CERT_PATH, SERVER_KEY_PATH);
+app.add_route("GET", "/api/ping", handlers::PingHandler{});
+app.add_route("GET", "/api/echo", handlers::EchoHandler{});
+app.add_route("GET", "/api/info", handlers::InfoHandler{"1.0"});
+
+app.initialize();
+app.run();
+```
+
+`initialize()` подготавливает HTTPS-сервер. Вызов `run()` до инициализации или повторный вызов `initialize()` приводит к `std::logic_error`. `stop()` передаёт остановку уже инициализированному серверу.
+
 ## Требования
 
 - CMake 3.20 или новее

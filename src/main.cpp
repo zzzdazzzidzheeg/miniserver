@@ -2,25 +2,20 @@
 #include <string>
 
 #include "logger.h"
-#include "server.h"
-#include "router.h"
 #include "handlers.h"
+#include "app/server_application.h"
 
 int main() {
     log_info("Application: Starting server");
 
     try {
-        Router router;
-        router.add_route("GET", "/api/ping", handlers::PingHandler{});
-        router.add_route("GET", "/api/echo", handlers::EchoHandler{});
-        router.add_route("GET", "/api/info", handlers::InfoHandler{"1.0"});
-
-        RequestHandler app_handler = [&router](const HttpRequest& request) {
-            return router.route(request);
-        };
-        Server server(4433, SERVER_CERT_PATH, SERVER_KEY_PATH, app_handler);
-        server.run();
-        server.stop();
+        ServerApplication app(4433, SERVER_CERT_PATH, SERVER_KEY_PATH);
+        app.add_route("GET", "/api/ping", handlers::PingHandler{});
+        app.add_route("GET", "/api/echo", handlers::EchoHandler{});
+        app.add_route("GET", "/api/info", handlers::InfoHandler{"1.0"});
+        app.initialize();
+        app.run();
+        app.stop();
         log_info("Application: Shutdown complete");
         return 0;
     } catch (const std::exception& error) {
