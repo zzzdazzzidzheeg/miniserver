@@ -16,6 +16,13 @@
 class ServerApplication {
 public:
     explicit ServerApplication(ApplicationConfig config);
+    // Loads the default config near the executable unless config_path is supplied.
+    explicit ServerApplication(const std::string& executable_path,
+                               std::string config_path = {});
+
+    void set_config_path(std::string path);
+    const std::string& config_path() const noexcept;
+    const ApplicationConfig& config() const noexcept;
 
     void add_route(std::string method, std::string path, RouteAccess access, Router::Handler handler);
     void add_middleware(Middleware middleware);
@@ -28,6 +35,8 @@ public:
     void stop();
 
 private:
+    std::string executable_path_;
+    std::string config_path_;
     ApplicationConfig config_;
     std::unique_ptr<database::SQLiteDatabase> database_;
     std::shared_ptr<RequestStatistics> request_statistics_;
@@ -35,4 +44,5 @@ private:
     std::map<std::string, auth::Authenticator> authenticators_;
     Router router_;
     std::unique_ptr<Server> server_;
+    mutable bool configuration_locked_ = false;
 };

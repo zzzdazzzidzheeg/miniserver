@@ -1,23 +1,90 @@
 #include "server_application.h"
 #include "request_logging.h"
+#include "logger.h"
 
+#include <filesystem>
 #include <stdexcept>
 #include <utility>
 
+namespace {
+
+std::string find_default_config(const std::string& executable_path) {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const fs::path executable = fs::absolute(executable_path, error).lexically_normal();
+    if (!error) {
+        const fs::path executable_dir = executable.parent_path();
+        const fs::path candidates[] = {
+            executable_dir / "config/server.json",
+            executable_dir.parent_path() / "config/server.json",
+            fs::current_path(error) / "config/server.json"
+        };
+        for (const auto& candidate : candidates) {
+            error.clear();
+            if (fs::is_regular_file(candidate, error) && !error) return candidate.string();
+        }
+    }
+    return "config/server.json";
+}
+
+std::unique_ptr<database::SQLiteDatabase> make_database(const ApplicationConfig& config) {
+    return std::make_unique<database::SQLiteDatabase>(
+        config.database.file, config.database.require_user_email);
+}
+
+} // namespace
+
 ServerApplication::ServerApplication(ApplicationConfig config)
     : config_(std::move(config)),
-      database_(std::make_unique<database::SQLiteDatabase>(
-          config_.database.file, config_.database.require_user_email)),
-      request_statistics_(std::make_shared<RequestStatistics>()) {}
+      database_(make_database(config_)),
+      request_statistics_(std::make_shared<RequestStatistics>()) {
+    Logger::configure(config_.logging.level, config_.logging.file);
+}
+
+ServerApplication::ServerApplication(const std::string& executable_path,
+                                     std::string config_path)
+    : executable_path_(executable_path),
+      config_path_(config_path.empty() ? find_default_config(executable_path_)
+                                       : std::move(config_path)),
+      config_(load_application_config(config_path_)),
+      database_(make_database(config_)),
+      request_statistics_(std::make_shared<RequestStatistics>()) {
+    Logger::configure(config_.logging.level, config_.logging.file);
+}
+
+void ServerApplication::set_config_path(std::string path) {
+    if (configuration_locked_ || server_) {
+        throw std::logic_error("Config path must be set before configuring or initializing the application");
+    }
+    if (path.empty()) path = find_default_config(executable_path_);
+
+    auto new_config = load_application_config(path);
+    auto new_database = make_database(new_config);
+    Logger::configure(new_config.logging.level, new_config.logging.file);
+    config_ = std::move(new_config);
+    database_ = std::move(new_database);
+    config_path_ = std::move(path);
+}
+
+const std::string& ServerApplication::config_path() const noexcept {
+    return config_path_;
+}
+
+const ApplicationConfig& ServerApplication::config() const noexcept {
+    configuration_locked_ = true;
+    return config_;
+}
 
 void ServerApplication::add_route(
     std::string method, std::string path, RouteAccess access, Router::Handler handler) {
+    configuration_locked_ = true;
     router_.add_route(std::move(method), std::move(path), access, std::move(handler));
 }
 
 void ServerApplication::add_middleware(Middleware middleware) {
     if (server_) throw std::logic_error("Middleware must be registered before initialization");
     if (!middleware) throw std::invalid_argument("Middleware cannot be empty");
+    configuration_locked_ = true;
     middlewares_.push_back(std::move(middleware));
 }
 
@@ -27,16 +94,19 @@ void ServerApplication::add_authenticator(std::string provider, auth::Authentica
     }
     if (provider.empty()) throw std::invalid_argument("Authentication provider name cannot be empty");
     if (!authenticator) throw std::invalid_argument("Authenticator cannot be empty");
+    configuration_locked_ = true;
     if (!authenticators_.emplace(std::move(provider), std::move(authenticator)).second) {
         throw std::invalid_argument("Authentication provider is already registered");
     }
 }
 
 void ServerApplication::set_not_found_handler(Router::Handler handler) {
+    configuration_locked_ = true;
     router_.set_not_found_handler(std::move(handler));
 }
 
 database::SQLiteDatabase& ServerApplication::database() noexcept {
+    configuration_locked_ = true;
     return *database_;
 }
 
@@ -48,6 +118,7 @@ void ServerApplication::initialize() {
     if (server_) {
         throw std::logic_error("ServerApplication is already initialized");
     }
+    configuration_locked_ = true;
 
     if (config_.middleware.request_logging_enabled) {
         router_.add_middleware(make_request_logging_middleware());

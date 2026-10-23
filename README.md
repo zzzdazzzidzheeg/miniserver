@@ -111,10 +111,12 @@ Middleware, необходимые для корректной работы пр
 
 ## Подключение маршрутов и компонентов
 
-`ServerApplication` получает загруженную конфигурацию. Маршрут регистрируется с явной политикой доступа и обработчиком:
+`ServerApplication` загружает конфигурацию рядом с исполняемым файлом (для запуска из `build/src` — из `build/config/server.json`). Путь можно передать конструктору или задать через `set_config_path()` до настройки приложения. Конфигурация хранится в объекте приложения и доступна через `config()`:
 
 ```cpp
-ServerApplication app(load_application_config("config/server.json"));
+ServerApplication app(argv[0], argc > 1 ? argv[1] : "");
+
+const auto& config = app.config();
 
 app.add_route("GET", "/api/ping", RouteAccess::Public,
     handlers::PingHandler{});

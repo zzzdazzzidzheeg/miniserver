@@ -1,6 +1,5 @@
 #include <exception>
 #include <chrono>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -8,50 +7,25 @@
 #include "logger.h"
 #include "handlers.h"
 #include "server_application.h"
-#include "application_config.h"
 #include "auth_handlers.h"
 #include "sqlite_account_service.h"
 #include "authentication_middleware.h"
 #include "static_file_handler.h"
 
-namespace {
-
-std::string find_default_config(const char* executable_path) {
-    namespace fs = std::filesystem;
-    std::error_code error;
-    const fs::path executable = fs::absolute(executable_path, error).lexically_normal();
-    if (!error) {
-        const fs::path executable_dir = executable.parent_path();
-        const fs::path candidates[] = {
-            executable_dir / "config/server.json",
-            executable_dir.parent_path() / "config/server.json",
-            fs::current_path(error) / "config/server.json"
-        };
-        for (const auto& candidate : candidates) {
-            error.clear();
-            if (fs::is_regular_file(candidate, error) && !error) return candidate.string();
-        }
-    }
-    return "config/server.json";
-}
-
-} // namespace
-
 int main(int argc, char* argv[]) {
     try {
-        const std::string config_path = argc > 1 ? argv[1] : find_default_config(argv[0]);
-        auto config = load_application_config(config_path);
+        ServerApplication app(argv[0], argc > 1 ? argv[1] : "");
+
+        const auto& config = app.config();
         const std::string authentication_provider = config.authentication.provider;
         const ApplicationMode application_mode = config.mode;
         const std::string web_root = config.web_root;
         const bool registration_email_required = config.database.require_user_email;
         const auto access_token_lifetime = std::chrono::seconds(
             config.authentication.access_token_lifetime_seconds);
-        Logger::configure(config.logging.level, config.logging.file);
         log_info("Application", "Starting server");
 
         std::unique_ptr<auth::SQLiteAccountService> accounts;
-        ServerApplication app(std::move(config));
         if (authentication_provider == "bearer") {
             accounts = std::make_unique<auth::SQLiteAccountService>(
                 app.database(), access_token_lifetime);
