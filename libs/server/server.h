@@ -1,35 +1,37 @@
 #pragma once
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <boost/beast.hpp>
 #include <atomic>
+#include <memory>
+#include <vector>
+#include "server_config.h"
+#include "http_types.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace asio = boost::asio;
 namespace ssl = asio::ssl;
 
-using HttpRequest = http::request<http::string_body>;
-using HttpResponse = http::response<http::string_body>;
-
-using RequestHandler = std::function<HttpResponse(const HttpRequest&)>;
+class Session;
 
 class Server {
 public:
-	Server(unsigned short port,
-		const std::string& cert_file,
-		const std::string& key_file, 
-		RequestHandler handler);
+	Server(ServerConfig server_config, SessionConfig session_config, RequestHandler handler);
 	void run();
 	void stop();
 private:
 	void do_accept();
-	static constexpr std::size_t max_connections_ = 1024;
-
+	void do_stop();
+	std::atomic<std::size_t> active_connections_{0};
+	std::atomic<bool> stop_requested_{false};
+	ServerConfig server_config_;
+	SessionConfig session_config_;
 	boost::asio::io_context io_context_;
 	boost::asio::ssl::context ssl_context_;
 	boost::asio::ip::tcp::acceptor acceptor_;
-	std::atomic<std::size_t> active_connections_{0};
-	std::atomic<bool> stopped_{false};
+	asio::signal_set signals_;
 	RequestHandler request_handler_;
+	std::vector<std::weak_ptr<Session>> sessions_;
 };

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 
 namespace {
 
@@ -47,7 +48,39 @@ void Router::add_route(std::string method, std::string path, Handler handler) {
     routes_[std::move(key)] = std::move(handler);
 }
 
+void Router::add_middleware(Middleware middleware) {
+    if (!middleware) throw std::invalid_argument("Middleware cannot be empty");
+    middleware_.push_back(std::move(middleware));
+}
+
 HttpResponse Router::route(const http::request<http::string_body>& req) const {
+    MiddlewareNext next = [this](const HttpRequest& request) {
+        return route_request(request);
+    };
+
+    for (auto it = middleware_.rbegin(); it != middleware_.rend(); ++it) {
+        Middleware current = *it;
+        MiddlewareNext downstream = std::move(next);
+        next = [current = std::move(current), downstream = std::move(downstream)](
+            const HttpRequest& request) {
+            try {
+                return current(request, downstream);
+            } catch (const std::exception& error) {
+                log_error("Router: Middleware exception: " + std::string(error.what()));
+                return HttpResponse{http_utils::make_error_response(
+                    500, "Internal server error", request.version())};
+            } catch (...) {
+                log_error("Router: Unknown middleware exception");
+                return HttpResponse{http_utils::make_error_response(
+                    500, "Internal server error", request.version())};
+            }
+        };
+    }
+
+    return next(req);
+}
+
+HttpResponse Router::route_request(const http::request<http::string_body>& req) const {
     const ParsedUrl parsed_url = parse_url(req.target());
     if (!parsed_url.valid) {
         log_warning("Router: Invalid request target");
@@ -56,7 +89,6 @@ HttpResponse Router::route(const http::request<http::string_body>& req) const {
     }
 
     const std::string path = path_from_url(parsed_url);
-    log_info(path);
     const std::string key = normalize_method(std::string(req.method_string())) + " " + path;
 
 
@@ -72,8 +104,8 @@ HttpResponse Router::route(const http::request<http::string_body>& req) const {
             log_error("Router: Handler exception: " + std::string(e.what()));
             // Если обработчик упал с исключением, возвращаем 500
             return http_utils::make_error_response(
-                500, 
-                std::string("Handler exception: ") + e.what(), 
+                500,
+                "Internal server error",
                 req.version()
             );
         } 
@@ -87,4 +119,3 @@ HttpResponse Router::route(const http::request<http::string_body>& req) const {
     // Маршрут не найден, вызываем обработчик по умолчанию
     return default_handler_(req);
 }
-

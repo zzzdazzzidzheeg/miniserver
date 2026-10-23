@@ -5,21 +5,21 @@
 
 #include "router.h"
 #include "server.h"
+#include "application_config.h"
+#include "middleware.h"
 
 class ServerApplication {
 public:
-    ServerApplication(unsigned short port, std::string certificate_file,
-        std::string private_key_file);
+    explicit ServerApplication(ApplicationConfig config);
 
     void add_route(std::string method, std::string path, Router::Handler handler);
+    void add_middleware(Middleware middleware);
     void initialize();
     void run();
     void stop();
 
 private:
-    unsigned short port_;
-    std::string certificate_file_;
-    std::string private_key_file_;
+    ApplicationConfig config_;
     Router router_;
     std::unique_ptr<Server> server_;
 };

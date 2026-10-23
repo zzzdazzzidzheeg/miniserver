@@ -18,4 +18,5 @@ struct ParsedUrl {
 std::string decode_percent_encoding(std::string_view encoded_text);
 
 // Parses origin-form, absolute-form, and asterisk-form HTTP request targets.
+// Repeated path separators collapse into one; encoded slashes and fragments are rejected.
 ParsedUrl parse_url(std::string_view raw_request_url);

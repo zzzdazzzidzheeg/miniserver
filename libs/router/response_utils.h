@@ -2,13 +2,21 @@
 
 #include <boost/beast.hpp>
 #include <nlohmann/json.hpp>
+#include <filesystem>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include "http_types.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
 
 namespace http_utils {
+
+    inline HttpStringResponse make_error_response(
+        int status,
+        std::string_view message,
+        int version);
 
     // ---------------------------------------------------------
     // 1. Текстовый ответ (Plain Text)
@@ -50,11 +58,50 @@ namespace http_utils {
     // ---------------------------------------------------------
     // 3. Файловый ответ (File Body)
     // ---------------------------------------------------------
-    inline http::response<http::file_body> make_file_response(
+    inline HttpResponse make_file_response(
         int status, 
-        const std::string& file_path, 
+        const std::filesystem::path& root_directory,
+        const std::filesystem::path& relative_path,
         int version = 11) 
     {
+        namespace fs = std::filesystem;
+        if (relative_path.empty() || relative_path.is_absolute()) {
+            return make_error_response(400, "Invalid file path", version);
+        }
+        for (const auto& component : relative_path) {
+            if (component == "..") {
+                return make_error_response(400, "Invalid file path", version);
+            }
+        }
+
+        std::error_code path_ec;
+        const fs::path canonical_root = fs::canonical(root_directory, path_ec);
+        if (path_ec) {
+            return make_error_response(500, "Unable to open file", version);
+        }
+        const fs::path canonical_file = fs::canonical(canonical_root / relative_path, path_ec);
+        if (path_ec) {
+            if (path_ec == std::errc::no_such_file_or_directory ||
+                path_ec == std::errc::not_a_directory) {
+                return make_error_response(404, "File not found", version);
+            }
+            if (path_ec == std::errc::permission_denied) {
+                return make_error_response(403, "File access denied", version);
+            }
+            return make_error_response(500, "Unable to open file", version);
+        }
+
+        auto root_it = canonical_root.begin();
+        auto file_it = canonical_file.begin();
+        for (; root_it != canonical_root.end() && file_it != canonical_file.end(); ++root_it, ++file_it) {
+            if (*root_it != *file_it) {
+                return make_error_response(403, "File access denied", version);
+            }
+        }
+        if (root_it != canonical_root.end()) {
+            return make_error_response(403, "File access denied", version);
+        }
+
         // file_body требует особой инициализации через piecewise_construct
         http::response<http::file_body> res{
             std::piecewise_construct,
@@ -66,9 +113,18 @@ namespace http_utils {
         // В реальном проекте здесь можно добавить логику определения MIME-типа по расширению файла
         res.set(http::field::content_type, "application/octet-stream");
         
-        // Открываем файл. Если файла нет, будет выброшено std::system_error
+        // File-open failures are converted to ordinary HTTP error responses below.
         beast::error_code ec;
-        res.body().open(file_path.c_str(), beast::file_mode::scan, ec);
+        res.body().open(canonical_file.string().c_str(), beast::file_mode::scan, ec);
+        if (ec) {
+            if (ec == boost::system::errc::no_such_file_or_directory) {
+                return make_error_response(404, "File not found", version);
+            }
+            if (ec == boost::system::errc::permission_denied) {
+                return make_error_response(403, "File access denied", version);
+            }
+            return make_error_response(500, "Unable to open file", version);
+        }
         res.prepare_payload();
         
         return res;
@@ -90,7 +146,7 @@ namespace http_utils {
     // ---------------------------------------------------------
     // 5. Удобная обёртка для ошибок (возвращает JSON)
     // ---------------------------------------------------------
-    inline http::response<http::string_body> make_error_response(
+    inline HttpStringResponse make_error_response(
         int status, 
         std::string_view message, 
         int version = 11) 

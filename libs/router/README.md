@@ -19,11 +19,14 @@
 ### Тип обработчика
 
 ```cpp
-using HttpResponse = http::response<http::string_body>;
+using HttpResponse = std::variant<
+    http::response<http::string_body>,
+    http::response<http::file_body>,
+    http::response<http::empty_body>>;
 using Handler = std::function<HttpResponse(const http::request<http::string_body>&)>;
 ```
 
-То есть обработчик принимает `http::request<http::string_body>` и возвращает `http::response<http::string_body>`.
+Обработчик принимает `http::request<http::string_body>` и может вернуть ответ с обычным, файловым или пустым телом. Обычные обработчики могут возвращать `string_body` напрямую.
 
 ### API
 
@@ -200,14 +203,15 @@ nlohmann::json payload = { {"status", "ok"} };
 auto res = http_utils::make_json_response(200, payload, 11);
 ```
 
-#### `make_file_response(status, file_path, version)`
+#### `make_file_response(status, root_directory, relative_path, version)`
 
-Создаёт ответ с содержимым файла через `http::file_body`.
+Создаёт ответ с содержимым файла через `http::file_body`. Путь должен быть относительным к разрешённой корневой директории; абсолютные пути, `..` и symlink-выход за корень отклоняются. Ошибка открытия преобразуется в JSON `404`, `403` или `500`.
 
 ```cpp
 auto res = http_utils::make_file_response(
     200,
-    "static/index.html",
+    "static",
+    "index.html",
     11
 );
 ```

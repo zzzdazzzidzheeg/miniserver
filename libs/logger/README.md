@@ -31,19 +31,15 @@
 ```cpp
 #include "logger.h"
 
-Logger::setLogLevel(LogLevel::Info);
-Logger::setLogFile("logs/server.log");
-
+Logger::configure(LogLevel::Info, "logs/server.log");
 Logger::debug("Подробная диагностика");
 Logger::info("Сервер запущен");
 Logger::warning("Подключение к внешнему сервису медленное");
 Logger::error("Не удалось открыть соединение");
 ```
 
-Методы класса:
+Уровень и путь к файлу задаются при запуске через раздел `logging` в `config/server.json`. В коде настройки применяются один раз через `Logger::configure(...)`. Методы класса для записи:
 
-- `setLogLevel(LogLevel level)` — устанавливает минимальный уровень логирования;
-- `setLogFile(const std::string& filename)` — включает запись в указанный файл;
 - `debug(...)`, `info(...)`, `warning(...)`, `error(...)` — логирование сообщений;
 - `clear()` — очищает текущий лог-файл и записывает сообщение о сбросе.
 
@@ -52,8 +48,6 @@ Logger::error("Не удалось открыть соединение");
 Также доступны функции в стиле C:
 
 ```cpp
-log_set_level(LogLevel::Warning);
-log_set_file("logs/app.log");
 log_info("Запуск приложения");
 log_warning("Некорректный запрос");
 log_error("Ошибка обработки");
@@ -61,8 +55,6 @@ log_error("Ошибка обработки");
 
 Доступны следующие функции:
 
-- `log_set_level(...)`
-- `log_set_file(...)`
 - `log_clear()`
 - `log_debug(...)`
 - `log_info(...)`
@@ -87,7 +79,7 @@ log_error("Ошибка обработки");
 
 ### Вывод в файл
 
-Если вызван `setLogFile(...)` или `log_set_file(...)`, логгер открывает файл в режиме добавления (`std::ios::app`).
+Если в конфигурации задан `logging.file`, логгер открывает файл в режиме добавления (`std::ios::app`). Пустое значение оставляет вывод только в консоль.
 
 Это означает, что новые записи дописываются в конец файла, а не перезаписывают его.
 
@@ -97,10 +89,13 @@ log_error("Ошибка обработки");
 
 Пример:
 
-```cpp
-Logger::setLogLevel(LogLevel::Warning);
-Logger::info("Этот текст не будет показан");
-Logger::warning("Этот текст попадёт в лог");
+```json
+{
+  "logging": {
+    "level": "warning",
+    "file": "logs/server.log"
+  }
+}
 ```
 
 ## Очистка файла
@@ -113,7 +108,7 @@ Logger::warning("Этот текст попадёт в лог");
 
 ## Ограничения и замечания
 
-- По умолчанию минимальный уровень — `Debug`.
+- По умолчанию минимальный уровень — `Info`.
 - Если файл не задан, логирование идёт только в консоль.
 - Логгер потокобезопасен: записи защищены мьютексом.
 - Время в сообщении формируется локальным временем системы.
@@ -124,9 +119,7 @@ Logger::warning("Этот текст попадёт в лог");
 #include "logger.h"
 
 int main() {
-    Logger::setLogLevel(LogLevel::Info);
-    Logger::setLogFile("server.log");
-
+    Logger::configure(LogLevel::Info);
     Logger::info("Сервер стартовал");
     Logger::warning("Проверка входящих соединений");
     Logger::error("Не удалось подключиться к базе данных");

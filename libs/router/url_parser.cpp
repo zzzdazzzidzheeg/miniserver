@@ -1,5 +1,6 @@
 #include "url_parser.h"
 
+#include <cctype>
 #include <utility>
 
 namespace {
@@ -43,6 +44,16 @@ bool has_control_character(std::string_view value) {
     return false;
 }
 
+bool is_scheme(std::string_view value) {
+    if (value.empty() || !std::isalpha(static_cast<unsigned char>(value.front()))) return false;
+    for (unsigned char character : value.substr(1)) {
+        if (!std::isalnum(character) && character != '+' && character != '-' && character != '.') {
+            return false;
+        }
+    }
+    return true;
+}
+
 ParsedUrl invalid_url(std::string message) {
     ParsedUrl result;
     result.valid = false;
@@ -61,6 +72,7 @@ ParsedUrl parse_url(std::string_view raw_request_url) {
     if (raw_request_url.empty()) return invalid_url("empty request target");
     if (raw_request_url.size() > max_url_length) return invalid_url("request target too long");
     if (has_control_character(raw_request_url)) return invalid_url("control character in request target");
+    if (raw_request_url.find('#') != std::string_view::npos) return invalid_url("fragment in request target");
     if (raw_request_url == "*") {
         ParsedUrl result;
         result.is_asterisk = true;
@@ -69,10 +81,19 @@ ParsedUrl parse_url(std::string_view raw_request_url) {
 
     std::string absolute_target;
     std::string_view target = raw_request_url;
-    const std::size_t scheme_separator = raw_request_url.find("://");
-    if (scheme_separator != std::string_view::npos) {
-        const std::size_t authority_start = scheme_separator + 3;
+    if (target.front() != '/') {
+        const std::size_t colon = raw_request_url.find(':');
+        if (colon == std::string_view::npos || !is_scheme(raw_request_url.substr(0, colon)) ||
+            raw_request_url.substr(colon, 3) != "://") {
+            return invalid_url("unsupported request target form");
+        }
+
+        const std::size_t authority_start = colon + 3;
         const std::size_t path_start = raw_request_url.find_first_of("/?", authority_start);
+        const std::size_t authority_end = path_start == std::string_view::npos
+            ? raw_request_url.size() : path_start;
+        if (authority_end == authority_start) return invalid_url("empty authority in absolute request target");
+
         if (path_start != std::string_view::npos && raw_request_url[path_start] == '?') {
             absolute_target = "/";
             absolute_target.append(raw_request_url.substr(path_start));
@@ -102,6 +123,7 @@ ParsedUrl parse_url(std::string_view raw_request_url) {
 
         std::string segment;
         if (!decode_component(raw_segment, segment, false)) return invalid_url("invalid percent escape");
+        if (segment.find('/') != std::string::npos) return invalid_url("encoded slash in path segment");
         if (segment == "." || segment == "..") return invalid_url("dot path segment is not allowed");
         if (has_control_character(segment)) return invalid_url("control character in path");
         result.path_segments.push_back(std::move(segment));

@@ -1,4 +1,5 @@
 #pragma once
+#include <fstream>
 #include <string>
 enum class LogLevel {
     Debug = 0,
@@ -9,8 +10,7 @@ enum class LogLevel {
 
 class Logger {
 public:
-    static void setLogLevel(LogLevel level);
-    static void setLogFile(const std::string& filename);
+    static void configure(LogLevel level, const std::string& filename = "");
 
     static void debug(const std::string& message);
     static void info(const std::string& message);
@@ -28,8 +28,6 @@ private:
     static std::ofstream fileStream_;
     static std::string currentFilename_;
 };
-void log_set_level(LogLevel level);
-void log_set_file(const std::string& filename);
 void log_clear();
 
 void log_debug(const std::string& message);

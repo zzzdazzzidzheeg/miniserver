@@ -15,7 +15,10 @@
 
 ```cpp
 using HttpRequest = http::request<http::string_body>;
-using HttpResponse = http::response<http::string_body>;
+using HttpResponse = std::variant<
+    http::response<http::string_body>,
+    http::response<http::file_body>,
+    http::response<http::empty_body>>;
 using RequestHandler = std::function<HttpResponse(const HttpRequest&)>;
 ```
 
@@ -71,7 +74,7 @@ Server server(...);
 server.run();
 ```
 
-`run()` запускает цикл обработки событий `io_context_`, после чего сервер начинает принимать соединения и обрабатывать их асинхронно.
+`run()` запускает цикл обработки событий `io_context_`, после чего сервер начинает принимать соединения и обрабатывать их асинхронно. Исключения обработчиков событий приводят к закрытию сервера и повторно выбрасываются вызывающему коду после завершения очистки.
 
 Для остановки сервера используется:
 
@@ -79,7 +82,7 @@ server.run();
 server.stop();
 ```
 
-Метод `stop()` отменяет приём новых соединений, закрывает acceptor и останавливает event loop.
+Метод `stop()` отменяет приём новых соединений, закрывает сокеты активных сессий и даёт циклу событий обработать отменённые операции перед завершением. SIGINT и SIGTERM вызывают тот же путь остановки.
 
 ## Внутреннее поведение `Server`
 
@@ -200,8 +203,7 @@ HttpResponse handle_request(const HttpRequest& request) {
 }
 
 int main() {
-    log_set_level(LogLevel::Info);
-    log_set_file("logs/server.log");
+    Logger::configure(LogLevel::Info, "logs/server.log");
 
     Server server(443, "certs/server.crt", "certs/server.key", handle_request);
     server.run();

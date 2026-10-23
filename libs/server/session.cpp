@@ -3,10 +3,11 @@
 #include <iostream>
 
 Session::Session(asio::ssl::stream<asio::ip::tcp::socket> socket,
-    RequestHandler request_handler, std::function<void()> on_close)
+    RequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
     : socket_(std::move(socket)),
     deadline_(socket_.get_executor()),
     request_handler_(std::move(request_handler)),
+    config_(std::move(config)),
     on_close_(std::move(on_close)) {
 }
 
@@ -33,7 +34,7 @@ void Session::cancel_deadline() {
 }
 
 void Session::do_handshake() {
-    arm_deadline(std::chrono::seconds(10));
+    arm_deadline(config_.handshake_timeout);
     log_debug("Session: " + socket_.lowest_layer().remote_endpoint().address().to_string() + ": Doing handshake...");
     socket_.async_handshake(
         ssl::stream_base::server,
@@ -55,11 +56,19 @@ void Session::start() {
     do_handshake();
 }
 
+void Session::force_close() {
+    closed_ = true;
+    beast::error_code error;
+    deadline_.cancel();
+    socket_.lowest_layer().cancel(error);
+    socket_.lowest_layer().close(error);
+}
+
 void Session::do_read() {
     log_info("Session: Reading...");
-    parser_.header_limit(8192);
-    parser_.body_limit(1024 * 1024);
-    arm_deadline(std::chrono::seconds(15));
+    parser_.header_limit(config_.header_limit);
+    parser_.body_limit(config_.body_limit);
+    arm_deadline(config_.read_timeout);
     http::async_read(
         socket_, buffer_, parser_,
         [self = shared_from_this()](beast::error_code ec, std::size_t) {
@@ -80,24 +89,33 @@ try {
         auto request = parser_.release();
 
         auto response = request_handler_(std::move(request));
-        log_info("Session: Sending HTTP response " + std::to_string(response.result_int()));
+        const auto status = std::visit([](const auto& message) { return message.result_int(); }, response);
+        log_info("Session: Sending HTTP response " + std::to_string(status));
         send_response(std::move(response));
         // 3. Устанавливаем статус 200 OK и версию HTTP из запроса
     }
     catch (const std::exception& e) {
         log_error("Session: Critical error: " + std::string(e.what()));
         // Фолбэк ответ генерируем прямо здесь, так как это уровень сети
-        HttpResponse err_res{http::status::internal_server_error, parser_.get().version()};
+        HttpStringResponse err_res{http::status::internal_server_error, parser_.get().version()};
         err_res.body() = "Internal Server Error";
         err_res.prepare_payload();
         send_response(std::move(err_res));
     }
 }
 
+void Session::send_response(HttpResponse response) {
+    std::visit([this](auto&& message) {
+        write_response(std::move(message));
+    }, std::move(response));
+}
+
 template <class Body>
-void Session::send_response(http::response<Body> res) {
+void Session::write_response(http::response<Body> res) {
+    // This session handles one request and then shuts down the connection.
+    res.keep_alive(false);
     auto resp = std::make_shared<http::response<Body>>(std::move(res));
-    arm_deadline(std::chrono::seconds(15));
+    arm_deadline(config_.write_timeout);
     http::async_write(
         socket_,
         *resp,
@@ -119,7 +137,7 @@ void Session::fail(beast::error_code ec, char const* what) {
     if (ec == beast::http::error::body_limit) {
         log_warning("Session: Request body too large");
         // Можно отправить 413 Payload Too Large
-        HttpResponse err_res{http::status::payload_too_large, parser_.get().version()};
+        HttpStringResponse err_res{http::status::payload_too_large, parser_.get().version()};
         err_res.body() = "Request body too large";
         err_res.prepare_payload();
         send_response(std::move(err_res));
@@ -150,9 +168,11 @@ void Session::do_shutdown() {
     closed_ = true;
     cancel_deadline();
     log_debug("Session: Shutting down SSL connection...");
-    
+
+    arm_deadline(config_.shutdown_timeout);
     socket_.async_shutdown(
         [self = shared_from_this()](beast::error_code ec) {
+            self->cancel_deadline();
             if (ec) {
                 // Игнорируем ошибки при shutdown (клиент мог уже закрыть соединение)
                 if (ec != asio::error::eof) {

@@ -3,8 +3,10 @@
 #include <fstream>
 #include <ctime>
 #include <mutex>
+#include <stdexcept>
+#include <utility>
 
-LogLevel Logger::minLogLevel_ = LogLevel::Debug;
+LogLevel Logger::minLogLevel_ = LogLevel::Info;
 std::ofstream Logger::fileStream_;
 std::string Logger::currentFilename_;
 
@@ -12,16 +14,19 @@ namespace {
 std::mutex logger_mutex;
 }
 
-void Logger::setLogLevel(LogLevel level) {
-    minLogLevel_ = level;
-}
-
-void Logger::setLogFile(const std::string& filename) {
-    currentFilename_ = filename;
-    if (fileStream_.is_open()) {
-        fileStream_.close();
+void Logger::configure(LogLevel level, const std::string& filename) {
+    std::lock_guard lock(logger_mutex);
+    std::ofstream configured_file;
+    if (!filename.empty()) {
+        configured_file.open(filename, std::ios::app);
+        if (!configured_file) {
+            throw std::runtime_error("Cannot open log file: " + filename);
+        }
     }
-    fileStream_.open(filename, std::ios::app);
+    if (fileStream_.is_open()) fileStream_.close();
+    fileStream_ = std::move(configured_file);
+    currentFilename_ = filename;
+    minLogLevel_ = level;
 }
 
 void Logger::debug(const std::string& message) {
@@ -71,7 +76,8 @@ std::string Logger::getTimestamp() {
     localtime_s(&tm_buf, &now);
     tm = &tm_buf;
 #else
-    tm = std::localtime(&now);
+    localtime_r(&now, &tm_buf);
+    tm = &tm_buf;
 #endif
 
     char buffer[20];
@@ -80,29 +86,18 @@ std::string Logger::getTimestamp() {
 }
 
 void Logger::clear() {
-    // if file is already empty, nothing to do
-    if (currentFilename_.empty()) {
-        return;
-    }
-    // if file is open for logging, close and open for clear 
-    if (fileStream_.is_open()) {
+    {
+        std::lock_guard lock(logger_mutex);
+        if (currentFilename_.empty()) return;
+
+        if (fileStream_.is_open()) fileStream_.close();
+        fileStream_.open(currentFilename_, std::ios::out | std::ios::trunc);
+        if (!fileStream_) return;
         fileStream_.close();
+        fileStream_.open(currentFilename_, std::ios::app);
+        if (!fileStream_) return;
     }
-
-    fileStream_.open(currentFilename_, std::ios::out | std::ios::trunc);
-    fileStream_.close();
-
-    fileStream_.open(currentFilename_, std::ios::app);
-
     log_info("Logger: Log file cleared");
-}
-
-void log_set_level(LogLevel level) {
-    Logger::setLogLevel(level);
-}
-
-void log_set_file(const std::string& filename) {
-    Logger::setLogFile(filename);
 }
 
 void log_debug(const std::string& message) {
