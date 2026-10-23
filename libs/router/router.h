@@ -15,12 +15,12 @@ namespace http = beast::http;
 class Router : public std::enable_shared_from_this<Router> {
 public:
     // Тип обработчика: функция, принимающая запрос и возвращающая ответ
-    using Handler = RequestHandler;
+    using Handler = RouteHandler;
 
     Router();
 
     // Регистрация маршрута
-    void add_route(std::string method, std::string path, Handler handler);
+    void add_route(std::string method, std::string path, RouteAccess access, Handler handler);
     void add_middleware(Middleware middleware);
     
     // Основной метод маршрутизации
@@ -28,10 +28,15 @@ public:
     void setup_router();
 
 private:
-    HttpResponse route_request(const HttpRequest& req) const;
+    HttpResponse route_request(HttpRequestContext& context) const;
+
+    struct Route {
+        Handler handler;
+        RouteAccess access;
+    };
 
     // Ключ: "METHOD PATH" (например, "GET /api/status")
-    std::unordered_map<std::string, Handler> routes_;
+    std::unordered_map<std::string, Route> routes_;
     std::vector<Middleware> middleware_;
     
     // Обработчик по умолчанию (404)

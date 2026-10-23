@@ -1,0 +1,202 @@
+#include "sqlite_database.h"
+
+#include <cctype>
+#include <filesystem>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <utility>
+
+namespace database {
+namespace {
+
+[[noreturn]] void throw_sqlite_error(sqlite3* connection, int result, const char* operation) {
+    const char* detail = connection ? sqlite3_errmsg(connection) : sqlite3_errstr(result);
+    throw std::runtime_error(std::string("SQLite ") + operation + " failed: " + detail);
+}
+
+std::string sqlite_error_message(sqlite3* connection, int result) {
+    return connection ? sqlite3_errmsg(connection) : sqlite3_errstr(result);
+}
+
+sqlite3_stmt* prepare(sqlite3* connection, std::string_view sql, const Parameters& parameters) {
+    const std::string sql_text(sql);
+    if (sql_text.find('\0') != std::string::npos) {
+        throw std::invalid_argument("SQLite statement cannot contain a null byte");
+    }
+    if (sql_text.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("SQLite statement is too large");
+    }
+    sqlite3_stmt* statement = nullptr;
+    const char* tail = nullptr;
+    const int result = sqlite3_prepare_v2(connection, sql_text.c_str(),
+        static_cast<int>(sql_text.size()), &statement, &tail);
+    if (result != SQLITE_OK) {
+        const std::string detail = sqlite_error_message(connection, result);
+        if (statement) sqlite3_finalize(statement);
+        throw std::runtime_error("SQLite prepare failed: " + detail);
+    }
+    if (!statement) throw std::invalid_argument("SQLite statement is empty");
+    while (tail && *tail && std::isspace(static_cast<unsigned char>(*tail))) ++tail;
+    if (tail && *tail) {
+        sqlite3_finalize(statement);
+        throw std::invalid_argument("Only one SQLite statement is allowed per call");
+    }
+
+    if (parameters.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+        sqlite3_bind_parameter_count(statement) != static_cast<int>(parameters.size())) {
+        sqlite3_finalize(statement);
+        throw std::invalid_argument("SQLite parameter count does not match statement");
+    }
+
+    for (std::size_t i = 0; i < parameters.size(); ++i) {
+        const int index = static_cast<int>(i + 1);
+        const int bind_result = std::visit([statement, index](const auto& value) -> int {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, std::nullptr_t>) {
+                return sqlite3_bind_null(statement, index);
+            } else if constexpr (std::is_same_v<T, std::int64_t>) {
+                return sqlite3_bind_int64(statement, index, value);
+            } else if constexpr (std::is_same_v<T, double>) {
+                return sqlite3_bind_double(statement, index, value);
+            } else {
+                if (value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                    return SQLITE_TOOBIG;
+                }
+                return sqlite3_bind_text(statement, index, value.data(),
+                    static_cast<int>(value.size()), SQLITE_TRANSIENT);
+            }
+        }, parameters[i]);
+
+        if (bind_result != SQLITE_OK) {
+            const std::string detail = sqlite_error_message(connection, bind_result);
+            sqlite3_finalize(statement);
+            throw std::runtime_error("SQLite bind failed: " + detail);
+        }
+    }
+
+    return statement;
+}
+
+Value read_column(sqlite3_stmt* statement, int column) {
+    switch (sqlite3_column_type(statement, column)) {
+    case SQLITE_INTEGER:
+        return static_cast<std::int64_t>(sqlite3_column_int64(statement, column));
+    case SQLITE_FLOAT:
+        return sqlite3_column_double(statement, column);
+    case SQLITE_TEXT: {
+        const auto* text = sqlite3_column_text(statement, column);
+        const int size = sqlite3_column_bytes(statement, column);
+        if (size == 0) return std::string{};
+        return std::string(reinterpret_cast<const char*>(text), static_cast<std::size_t>(size));
+    }
+    case SQLITE_BLOB: {
+        const auto* bytes = sqlite3_column_blob(statement, column);
+        const int size = sqlite3_column_bytes(statement, column);
+        if (size == 0) return std::string{};
+        return std::string(static_cast<const char*>(bytes), static_cast<std::size_t>(size));
+    }
+    case SQLITE_NULL:
+    default:
+        return nullptr;
+    }
+}
+
+} // namespace
+
+SQLiteDatabase::SQLiteDatabase(const std::string& file_path) {
+    if (file_path.empty()) {
+        throw std::invalid_argument("SQLite database path cannot be empty");
+    }
+    if (file_path.find('\0') != std::string::npos) {
+        throw std::invalid_argument("SQLite database path cannot contain a null byte");
+    }
+    const std::filesystem::path database_path(file_path);
+    if (database_path.has_parent_path()) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(database_path.parent_path(), directory_error);
+        if (directory_error) {
+            throw std::runtime_error("Cannot create SQLite database directory: " +
+                directory_error.message());
+        }
+    }
+    const int result = sqlite3_open_v2(file_path.c_str(), &connection_,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
+    if (result != SQLITE_OK) {
+        const std::string detail = connection_ ? sqlite3_errmsg(connection_) : sqlite3_errstr(result);
+        if (connection_) sqlite3_close(connection_);
+        connection_ = nullptr;
+        throw std::runtime_error("SQLite open failed: " + detail);
+    }
+
+    const int timeout_result = sqlite3_busy_timeout(connection_, 5000);
+    if (timeout_result != SQLITE_OK) {
+        const std::string detail = sqlite3_errmsg(connection_);
+        sqlite3_close(connection_);
+        connection_ = nullptr;
+        throw std::runtime_error("SQLite configure busy timeout failed: " + detail);
+    }
+}
+
+SQLiteDatabase::~SQLiteDatabase() {
+    if (connection_) sqlite3_close_v2(connection_);
+}
+
+int SQLiteDatabase::execute(std::string_view sql, const Parameters& parameters) {
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    sqlite3_stmt* statement = prepare(connection_, sql, parameters);
+    if (sqlite3_column_count(statement) != 0) {
+        sqlite3_finalize(statement);
+        throw std::invalid_argument("Statement returns rows; use query() instead");
+    }
+    int result = SQLITE_OK;
+    do {
+        result = sqlite3_step(statement);
+    } while (result == SQLITE_ROW);
+
+    if (result != SQLITE_DONE) {
+        const std::string detail = sqlite_error_message(connection_, result);
+        sqlite3_finalize(statement);
+        throw std::runtime_error("SQLite execute failed: " + detail);
+    }
+
+    sqlite3_finalize(statement);
+    return sqlite3_changes(connection_);
+}
+
+Rows SQLiteDatabase::query(std::string_view sql, const Parameters& parameters) {
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    sqlite3_stmt* statement = prepare(connection_, sql, parameters);
+    if (sqlite3_column_count(statement) == 0) {
+        sqlite3_finalize(statement);
+        throw std::invalid_argument("Statement returns no rows; use execute() instead");
+    }
+    Rows rows;
+    int result = SQLITE_OK;
+    while ((result = sqlite3_step(statement)) == SQLITE_ROW) {
+        Row row;
+        const int column_count = sqlite3_column_count(statement);
+        for (int column = 0; column < column_count; ++column) {
+            const char* name = sqlite3_column_name(statement, column);
+            row.insert_or_assign(name ? name : "", read_column(statement, column));
+        }
+        rows.push_back(std::move(row));
+    }
+
+    if (result != SQLITE_DONE) {
+        const std::string detail = sqlite_error_message(connection_, result);
+        sqlite3_finalize(statement);
+        throw std::runtime_error("SQLite query failed: " + detail);
+    }
+
+    sqlite3_finalize(statement);
+    return rows;
+}
+
+std::int64_t SQLiteDatabase::last_insert_row_id() const {
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    return static_cast<std::int64_t>(sqlite3_last_insert_rowid(connection_));
+}
+
+} // namespace database

@@ -23,10 +23,10 @@ using HttpResponse = std::variant<
     http::response<http::string_body>,
     http::response<http::file_body>,
     http::response<http::empty_body>>;
-using Handler = std::function<HttpResponse(const http::request<http::string_body>&)>;
+using Handler = std::function<HttpResponse(HttpRequestContext&)>;
 ```
 
-Обработчик принимает `http::request<http::string_body>` и может вернуть ответ с обычным, файловым или пустым телом. Обычные обработчики могут возвращать `string_body` напрямую.
+Обработчик получает `HttpRequestContext&`; исходный HTTP-запрос доступен через `context.request`, а аутентифицированный субъект — через `context.principal`. Обработчик может вернуть ответ с обычным, файловым или пустым телом.
 
 ### API
 
@@ -34,7 +34,7 @@ using Handler = std::function<HttpResponse(const http::request<http::string_body
 class Router : public std::enable_shared_from_this<Router> {
 public:
     Router();
-    void add_route(std::string method, std::string path, Handler handler);
+    void add_route(std::string method, std::string path, RouteAccess access, Handler handler);
     HttpResponse route(const http::request<http::string_body>& req) const;
     void setup_router();
 };
@@ -42,9 +42,9 @@ public:
 
 ### Основные методы
 
-#### `add_route(method, path, handler)`
+#### `add_route(method, path, access, handler)`
 
-Добавляет маршрут в словарь. Ключ формируется по схеме:
+Добавляет маршрут в словарь. Политика доступа обязательна: `Public` пропускает middleware аутентификации, а `Authenticated` требует principal. Ключ маршрута формируется по схеме:
 
 ```cpp
 "METHOD PATH"
@@ -53,7 +53,7 @@ public:
 Например:
 
 ```cpp
-router.add_route("GET", "/api/status", handler);
+router.add_route("GET", "/api/status", RouteAccess::Public, handler);
 ```
 
 #### `route(req)`
@@ -83,11 +83,11 @@ router.add_route("GET", "/api/status", handler);
 ```cpp
 Router router;
 
-router.add_route("GET", "/health", [](const auto& req) {
+router.add_route("GET", "/health", RouteAccess::Public, [](HttpRequestContext& context) {
     return http_utils::make_json_response(
         200,
         nlohmann::json{{"status", "ok"}},
-        req.version()
+        context.request.version()
     );
 });
 
@@ -256,19 +256,19 @@ auto res = http_utils::make_file_response(
 int main() {
     Router router;
 
-    router.add_route("GET", "/health", [](const auto& req) {
+    router.add_route("GET", "/health", RouteAccess::Public, [](HttpRequestContext& context) {
         return http_utils::make_json_response(
             200,
             nlohmann::json{{"status", "ok"}},
-            req.version()
+            context.request.version()
         );
     });
 
-    router.add_route("GET", "/users", [](const auto& req) {
+    router.add_route("GET", "/users", RouteAccess::Authenticated, [](HttpRequestContext& context) {
         return http_utils::make_text_response(
             200,
             "users list",
-            req.version()
+            context.request.version()
         );
     });
 

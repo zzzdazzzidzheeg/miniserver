@@ -81,13 +81,28 @@ ApplicationConfig load_application_config(const std::string& path) {
     if (logging.contains("level")) config.logging.level = parse_log_level(logging.at("level").get<std::string>());
     if (logging.contains("file")) config.logging.file = logging.at("file").get<std::string>();
 
+    if (const auto database = root.find("database"); database != root.end()) {
+        if (!database->is_object()) {
+            throw std::runtime_error("Config section 'database' must be an object");
+        }
+        if (database->contains("file")) {
+            config.database.file = database->at("file").get<std::string>();
+        }
+    }
+
     config.server.certificate_file = resolve_config_path(config.server.certificate_file);
     config.server.private_key_file = resolve_config_path(config.server.private_key_file);
     if (!config.logging.file.empty()) config.logging.file = resolve_config_path(config.logging.file);
+    if (config.database.file != ":memory:") {
+        config.database.file = resolve_config_path(config.database.file);
+    }
 
     if (config.server.address.empty()) throw std::runtime_error("Config field 'address' cannot be empty");
     if (config.server.certificate_file.empty() || config.server.private_key_file.empty()) {
         throw std::runtime_error("Config must provide server.certificate_file and server.private_key_file");
+    }
+    if (config.database.file.empty()) {
+        throw std::runtime_error("Config field 'database.file' cannot be empty");
     }
     return config;
 }

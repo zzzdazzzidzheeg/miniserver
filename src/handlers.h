@@ -14,8 +14,8 @@ namespace http = boost::beast::http;
 namespace handlers {
 
 struct PingHandler {
-    http::response<http::string_body> operator()(
-        const http::request<http::string_body>& request) const {
+    http::response<http::string_body> operator()(HttpRequestContext& context) const {
+        const auto& request = context.request;
         const nlohmann::json response = {
             {"status", "ok"},
             {"message", "pong"}
@@ -25,8 +25,8 @@ struct PingHandler {
 };
 
 struct EchoHandler {
-    http::response<http::string_body> operator()(
-        const http::request<http::string_body>& request) const {
+    http::response<http::string_body> operator()(HttpRequestContext& context) const {
+        const auto& request = context.request;
         try {
             const auto body = nlohmann::json::parse(request.body());
             const nlohmann::json response = {
@@ -49,8 +49,8 @@ struct InfoHandler {
     explicit InfoHandler(std::string version)
         : server_version(std::move(version)), start_time(std::time(nullptr)) {}
 
-    http::response<http::string_body> operator()(
-        const http::request<http::string_body>& request) const {
+    http::response<http::string_body> operator()(HttpRequestContext& context) const {
+        const auto& request = context.request;
         const nlohmann::json response = {
             {"server", "miniserver"},
             {"version", server_version},

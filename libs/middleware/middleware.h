@@ -4,5 +4,5 @@
 
 #include <functional>
 
-using MiddlewareNext = std::function<HttpResponse(const HttpRequest&)>;
-using Middleware = std::function<HttpResponse(const HttpRequest&, const MiddlewareNext&)>;
+using MiddlewareNext = std::function<HttpResponse(HttpRequestContext&)>;
+using Middleware = std::function<HttpResponse(HttpRequestContext&, const MiddlewareNext&)>;

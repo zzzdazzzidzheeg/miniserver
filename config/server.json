@@ -17,5 +17,8 @@
   "logging": {
     "level": "info",
     "file": ""
+  },
+  "database": {
+    "file": "../data/miniserver.sqlite3"
   }
 }

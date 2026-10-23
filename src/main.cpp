@@ -41,9 +41,9 @@ int main(int argc, char* argv[]) {
 
         ServerApplication app(std::move(config));
         app.add_middleware(make_request_logging_middleware());
-        app.add_route("GET", "/api/ping", handlers::PingHandler{});
-        app.add_route("GET", "/api/echo", handlers::EchoHandler{});
-        app.add_route("GET", "/api/info", handlers::InfoHandler{"1.0"});
+        app.add_route("GET", "/api/ping", RouteAccess::Public, handlers::PingHandler{});
+        app.add_route("GET", "/api/echo", RouteAccess::Public, handlers::EchoHandler{});
+        app.add_route("GET", "/api/info", RouteAccess::Public, handlers::InfoHandler{"1.0"});
         app.initialize();
         app.run();
         app.stop();

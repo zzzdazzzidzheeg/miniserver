@@ -32,7 +32,8 @@ std::string path_from_url(const ParsedUrl& parsed_url) {
 
 Router::Router() {
     // Инициализируем обработчик по умолчанию (404 Not Found)
-    default_handler_ = [](const http::request<http::string_body>& req) {
+    default_handler_ = [](HttpRequestContext& context) {
+        const auto& req = context.request;
         log_warning("Router", "Route not found for " + std::string(req.method_string()) +
             " " + std::string(req.target()));
         return http_utils::make_text_response(
@@ -43,9 +44,10 @@ Router::Router() {
     };
 }
 
-void Router::add_route(std::string method, std::string path, Handler handler) {
+void Router::add_route(std::string method, std::string path, RouteAccess access, Handler handler) {
+    if (!handler) throw std::invalid_argument("Route handler cannot be empty");
     std::string key = normalize_method(std::move(method)) + " " + std::move(path);
-    routes_[std::move(key)] = std::move(handler);
+    routes_[std::move(key)] = Route{std::move(handler), access};
 }
 
 void Router::add_middleware(Middleware middleware) {
@@ -54,33 +56,45 @@ void Router::add_middleware(Middleware middleware) {
 }
 
 HttpResponse Router::route(const http::request<http::string_body>& req) const {
-    MiddlewareNext next = [this](const HttpRequest& request) {
-        return route_request(request);
+    const ParsedUrl parsed_url = parse_url(req.target());
+    bool authentication_required = false;
+    if (parsed_url.valid) {
+        const std::string path = path_from_url(parsed_url);
+        const std::string key = normalize_method(std::string(req.method_string())) + " " + path;
+        const auto route = routes_.find(key);
+        authentication_required = route != routes_.end() &&
+            route->second.access == RouteAccess::Authenticated;
+    }
+    HttpRequestContext context(req, authentication_required);
+
+    MiddlewareNext next = [this](HttpRequestContext& request_context) {
+        return route_request(request_context);
     };
 
     for (auto it = middleware_.rbegin(); it != middleware_.rend(); ++it) {
         Middleware current = *it;
         MiddlewareNext downstream = std::move(next);
         next = [current = std::move(current), downstream = std::move(downstream)](
-            const HttpRequest& request) {
+            HttpRequestContext& request_context) {
             try {
-                return current(request, downstream);
+                return current(request_context, downstream);
             } catch (const std::exception& error) {
                 log_error("Router", "Middleware exception: " + std::string(error.what()));
                 return HttpResponse{http_utils::make_error_response(
-                    500, "Internal server error", request.version())};
+                    500, "Internal server error", request_context.request.version())};
             } catch (...) {
                 log_error("Router", "Unknown middleware exception");
                 return HttpResponse{http_utils::make_error_response(
-                    500, "Internal server error", request.version())};
+                    500, "Internal server error", request_context.request.version())};
             }
         };
     }
 
-    return next(req);
+    return next(context);
 }
 
-HttpResponse Router::route_request(const http::request<http::string_body>& req) const {
+HttpResponse Router::route_request(HttpRequestContext& context) const {
+    const auto& req = context.request;
     const ParsedUrl parsed_url = parse_url(req.target());
     if (!parsed_url.valid) {
         log_warning("Router", "Invalid request target");
@@ -96,9 +110,13 @@ HttpResponse Router::route_request(const http::request<http::string_body>& req) 
     auto it = routes_.find(key);
     
     if (it != routes_.end()) {
+        if (it->second.access == RouteAccess::Authenticated && !context.principal) {
+            log_error("Router", "Protected route has no configured authenticator");
+            return http_utils::make_error_response(500, "Internal server error", req.version());
+        }
         // Маршрут найден. Выполняем обработчик.
         try {
-            return it->second(req);
+            return it->second.handler(context);
         } 
         catch (const std::exception& e) {
             log_error("Router", "Handler exception: " + std::string(e.what()));
@@ -117,5 +135,5 @@ HttpResponse Router::route_request(const http::request<http::string_body>& req) 
     }
 
     // Маршрут не найден, вызываем обработчик по умолчанию
-    return default_handler_(req);
+    return default_handler_(context);
 }
