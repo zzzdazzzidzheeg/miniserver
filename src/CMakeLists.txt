@@ -1,5 +1,5 @@
-add_executable(miniserver main.cpp app/server_application.cpp app/application_config.cpp)
-target_link_libraries(miniserver PRIVATE server router middleware auth database logger nlohmann_json::nlohmann_json)
+add_executable(miniserver main.cpp)
+target_link_libraries(miniserver PRIVATE miniserver_application)
 
 add_custom_target(copy_runtime_files ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -7,8 +7,8 @@
 
 #include "logger.h"
 #include "handlers.h"
-#include "app/server_application.h"
-#include "app/application_config.h"
+#include "server_application.h"
+#include "application_config.h"
 #include "request_logging.h"
 #include "auth_handlers.h"
 #include "sqlite_account_service.h"

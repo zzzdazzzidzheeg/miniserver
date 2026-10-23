@@ -15,6 +15,7 @@ add_subdirectory(libs/http/middleware)
 add_subdirectory(libs/server)
 add_subdirectory(libs/http/router)
 add_subdirectory(libs/auth)
+add_subdirectory(libs/application)
 add_subdirectory(src)
 
 if(BUILD_TESTING)

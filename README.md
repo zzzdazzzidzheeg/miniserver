@@ -26,6 +26,7 @@ libs/
     router/
     middleware/
   auth/
+  application/
   database/
   logging/
   server/
@@ -34,6 +35,8 @@ static/
   app.css
   app.js
 ```
+
+`libs/application/` содержит повторно используемую загрузку конфигурации и `ServerApplication`, который связывает сервер, router, middleware и выбранные сервисы. `src/` содержит точку входа и конкретный состав приложения: обработчики и регистрацию маршрутов.
 
 HTTP-типы, маршрутизация и middleware сгруппированы под `http/`. Аутентификация, SQLite, логирование и сетевой сервер остаются отдельными CMake-библиотеками.
 
