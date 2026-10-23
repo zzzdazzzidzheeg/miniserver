@@ -1,7 +1,5 @@
 #include "authentication_middleware.h"
 
-#include "response_utils.h"
-
 #include <stdexcept>
 #include <utility>
 
@@ -23,9 +21,11 @@ Middleware make_authentication_middleware(Authenticator authenticator, std::stri
 
         auto principal = authenticator(context.request);
         if (!principal || principal->subject.empty()) {
-            auto response = http_utils::make_error_response(
-                401, "Authentication required", context.request.version());
+            HttpStringResponse response{http::status::unauthorized, context.request.version()};
+            response.set(http::field::content_type, "text/plain");
             response.set(http::field::www_authenticate, challenge);
+            response.body() = "Authentication required";
+            response.prepare_payload();
             return HttpResponse{std::move(response)};
         }
 

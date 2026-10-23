@@ -10,7 +10,7 @@ target_compile_features(config_database_tests PRIVATE cxx_std_17)
 target_include_directories(config_database_tests PRIVATE
     ../src/app
     ../libs/server
-    ../libs/logger)
+    ../libs/logging)
 target_link_libraries(config_database_tests PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME config_database_tests COMMAND config_database_tests)
 
