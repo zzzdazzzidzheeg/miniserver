@@ -11,6 +11,7 @@ struct ServerConfig {
     std::string certificate_file;
     std::string private_key_file;
     std::size_t max_connections = 1024;
+    std::size_t worker_threads = 4;
 };
 
 struct SessionConfig {

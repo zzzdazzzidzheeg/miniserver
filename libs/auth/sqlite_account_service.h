@@ -20,6 +20,8 @@ public:
         std::string_view username, std::string_view password);
     RegistrationOutcome register_account(const nlohmann::json& payload);
     std::optional<Principal> authenticate(std::string_view bearer_token);
+    bool logout(std::string_view bearer_token);
+    bool delete_account(std::string_view principal_subject);
 
 private:
     database::SQLiteDatabase& database_;

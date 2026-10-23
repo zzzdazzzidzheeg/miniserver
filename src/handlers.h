@@ -68,6 +68,10 @@ struct InfoHandler {
                 {"authentication_required", false}});
             endpoints.push_back({{"method", "GET"}, {"path", "/api/auth/me"},
                 {"authentication_required", true}});
+            endpoints.push_back({{"method", "POST"}, {"path", "/api/auth/logout"},
+                {"authentication_required", true}});
+            endpoints.push_back({{"method", "DELETE"}, {"path", "/api/auth/me"},
+                {"authentication_required", true}});
         }
         const nlohmann::json response = {
             {"server", "miniserver"},

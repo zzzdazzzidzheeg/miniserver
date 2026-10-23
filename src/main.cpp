@@ -66,6 +66,14 @@ int main(int argc, char* argv[]) {
                 auth::make_registration_handler([&accounts](const nlohmann::json& payload) {
                     return accounts->register_account(payload);
                 }));
+            app.add_route("POST", "/api/auth/logout", RouteAccess::Authenticated,
+                auth::make_logout_handler([&accounts](std::string_view token) {
+                    return accounts->logout(token);
+                }));
+            app.add_route("DELETE", "/api/auth/me", RouteAccess::Authenticated,
+                auth::make_account_deletion_handler([&accounts](std::string_view subject) {
+                    return accounts->delete_account(subject);
+                }));
             app.add_route("GET", "/api/auth/me", RouteAccess::Authenticated,
                 [](HttpRequestContext& context) {
                     return http_utils::make_json_response(200,

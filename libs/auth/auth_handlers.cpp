@@ -4,6 +4,7 @@
 #include "response_utils.h"
 
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace auth {
@@ -27,6 +28,26 @@ bool parse_credentials(const HttpRequestContext& context, std::string& username,
 
 HttpResponse bad_request(const HttpRequestContext& context) {
     return http_utils::make_error_response(400, "Invalid request", context.request.version());
+}
+
+std::optional<std::string_view> request_bearer_token(const HttpRequest& request) {
+    const auto authorization = request[http::field::authorization];
+    const std::string_view value(authorization.data(), authorization.size());
+    constexpr std::string_view scheme = "Bearer ";
+    if (value.size() <= scheme.size()) return std::nullopt;
+    for (std::size_t i = 0; i < scheme.size() - 1; ++i) {
+        char left = value[i];
+        char right = scheme[i];
+        if (left >= 'A' && left <= 'Z') left = static_cast<char>(left - 'A' + 'a');
+        if (right >= 'A' && right <= 'Z') right = static_cast<char>(right - 'A' + 'a');
+        if (left != right) return std::nullopt;
+    }
+    if (value[scheme.size() - 1] != ' ') return std::nullopt;
+    const auto token = value.substr(scheme.size());
+    if (token.empty() || token.find_first_of(" \t\r\n") != std::string_view::npos) {
+        return std::nullopt;
+    }
+    return token;
 }
 
 } // namespace
@@ -78,6 +99,29 @@ Router::Handler make_registration_handler(RegistrationCallback register_account)
             return http_utils::make_error_response(
                 400, "Registration could not be completed", context.request.version());
         }
+    };
+}
+
+Router::Handler make_logout_handler(LogoutCallback logout) {
+    if (!logout) throw std::invalid_argument("Logout callback cannot be empty");
+    return [logout = std::move(logout)](HttpRequestContext& context) -> HttpResponse {
+        const auto token = request_bearer_token(context.request);
+        if (!token || !logout(*token)) {
+            return http_utils::make_error_response(401, "Authentication required", context.request.version());
+        }
+        HttpEmptyResponse response{http::status::no_content, context.request.version()};
+        return HttpResponse{std::move(response)};
+    };
+}
+
+Router::Handler make_account_deletion_handler(AccountDeletionCallback delete_account) {
+    if (!delete_account) throw std::invalid_argument("Account deletion callback cannot be empty");
+    return [delete_account = std::move(delete_account)](HttpRequestContext& context) -> HttpResponse {
+        if (!context.principal || !delete_account(context.principal->subject)) {
+            return http_utils::make_error_response(404, "Account not found", context.request.version());
+        }
+        HttpEmptyResponse response{http::status::no_content, context.request.version()};
+        return HttpResponse{std::move(response)};
     };
 }
 

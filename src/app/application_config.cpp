@@ -70,6 +70,10 @@ ApplicationConfig load_application_config(const std::string& path) {
     if (server.contains("certificate_file")) config.server.certificate_file = server.at("certificate_file").get<std::string>();
     if (server.contains("private_key_file")) config.server.private_key_file = server.at("private_key_file").get<std::string>();
     config.server.max_connections = positive_value<std::size_t>(server, "max_connections", config.server.max_connections);
+    config.server.worker_threads = positive_value<std::size_t>(server, "worker_threads", config.server.worker_threads);
+    if (config.server.worker_threads > 256) {
+        throw std::runtime_error("Config field 'server.worker_threads' must be at most 256");
+    }
 
     config.session.handshake_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "handshake_timeout_seconds", config.session.handshake_timeout.count()));
     config.session.read_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "read_timeout_seconds", config.session.read_timeout.count()));

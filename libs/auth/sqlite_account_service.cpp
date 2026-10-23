@@ -5,6 +5,7 @@
 #include <openssl/rand.h>
 
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -135,6 +136,11 @@ SQLiteAccountService::SQLiteAccountService(database::SQLiteDatabase& database,
         "expires_at INTEGER NOT NULL"
         ")");
     database_.execute("CREATE INDEX IF NOT EXISTS access_tokens_expiry ON access_tokens(expires_at)");
+    database_.execute(
+        "CREATE TRIGGER IF NOT EXISTS delete_user_access_tokens "
+        "AFTER DELETE ON users BEGIN "
+        "DELETE FROM access_tokens WHERE user_id = OLD.id; "
+        "END");
 }
 
 std::optional<IssuedAccessToken> SQLiteAccountService::login(
@@ -202,6 +208,27 @@ std::optional<Principal> SQLiteAccountService::authenticate(std::string_view bea
         {sha256_hex(bearer_token), unix_time_seconds()});
     if (rows.empty()) return std::nullopt;
     return Principal{std::to_string(std::get<std::int64_t>(rows.front().at("id")))};
+}
+
+bool SQLiteAccountService::logout(std::string_view bearer_token) {
+    if (bearer_token.size() != access_token_size * 2) return false;
+    for (const char value : bearer_token) {
+        if (hex_value(value) < 0) return false;
+    }
+    return database_.execute("DELETE FROM access_tokens WHERE token_hash = ?",
+        {sha256_hex(bearer_token)}) > 0;
+}
+
+bool SQLiteAccountService::delete_account(std::string_view principal_subject) {
+    std::int64_t user_id = 0;
+    const auto parsed = std::from_chars(principal_subject.data(),
+        principal_subject.data() + principal_subject.size(), user_id);
+    if (parsed.ec != std::errc{} || parsed.ptr != principal_subject.data() + principal_subject.size() ||
+        user_id <= 0) {
+        return false;
+    }
+    // The trigger removes all credentials in the same SQLite statement as the user row.
+    return database_.execute("DELETE FROM users WHERE id = ?", {user_id}) > 0;
 }
 
 } // namespace auth

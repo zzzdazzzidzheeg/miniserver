@@ -53,16 +53,22 @@ void Session::do_handshake() {
 }
 
 void Session::start() {
-	log_info("Session", "New connection from: " + socket_.lowest_layer().remote_endpoint().address().to_string());
-    do_handshake();
+	const auto self = shared_from_this();
+	asio::dispatch(socket_.get_executor(), [self] {
+		log_info("Session", "New connection from: " + self->socket_.lowest_layer().remote_endpoint().address().to_string());
+		self->do_handshake();
+	});
 }
 
 void Session::force_close() {
-    closed_ = true;
-    beast::error_code error;
-    deadline_.cancel();
-    socket_.lowest_layer().cancel(error);
-    socket_.lowest_layer().close(error);
+	const auto self = shared_from_this();
+	asio::dispatch(socket_.get_executor(), [self] {
+		self->closed_ = true;
+		beast::error_code error;
+		self->deadline_.cancel();
+		self->socket_.lowest_layer().cancel(error);
+		self->socket_.lowest_layer().close(error);
+	});
 }
 
 void Session::do_read() {

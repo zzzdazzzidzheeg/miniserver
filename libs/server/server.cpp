@@ -6,18 +6,23 @@
 #include <algorithm>
 #include <csignal>
 #include <exception>
+#include <thread>
 
 Server::Server(ServerConfig server_config, SessionConfig session_config,
             RequestHandler request_handler)
             : server_config_(std::move(server_config)),
               session_config_(std::move(session_config)),
               io_context_(boost::asio::io_context()),
+              control_strand_(asio::make_strand(io_context_)),
               ssl_context_(boost::asio::ssl::context::tlsv13),
               acceptor_(io_context_),
               signals_(io_context_, SIGINT, SIGTERM),
             request_handler_(std::move(request_handler))
          {
     try {  
+        if (server_config_.worker_threads == 0 || server_config_.worker_threads > 256) {
+            throw std::invalid_argument("Server worker_threads must be between 1 and 256");
+        }
         const auto address = boost::asio::ip::make_address(server_config_.address);
         const boost::asio::ip::tcp::endpoint endpoint(address, server_config_.port);
         acceptor_.open(endpoint.protocol());
@@ -43,8 +48,8 @@ Server::Server(ServerConfig server_config, SessionConfig session_config,
 void Server::do_accept() {
     if (stop_requested_) return;
     log_debug("Server", "Waiting for new connections...");
-    acceptor_.async_accept([this](const boost::system::error_code& ec,
-        boost::asio::ip::tcp::socket socket) {
+    acceptor_.async_accept(asio::make_strand(io_context_), asio::bind_executor(control_strand_,
+        [this](const boost::system::error_code& ec, boost::asio::ip::tcp::socket socket) {
             if (!ec) {
                 if (stop_requested_) {
                     boost::system::error_code close_ec;
@@ -74,36 +79,59 @@ void Server::do_accept() {
                 log_error("Server", std::string("Accept error: ") + ec.message());
             }
             if (!stop_requested_) do_accept();
-        });
+    }));
 }
 
 void Server::run() {
     if (!stop_requested_) {
-        signals_.async_wait([this](const boost::system::error_code& ec, int signal) {
+        signals_.async_wait(asio::bind_executor(control_strand_, [this](const boost::system::error_code& ec, int signal) {
             if (ec) return;
             log_info("Server", "Received signal " + std::to_string(signal) + ", shutting down");
             stop();
-        });
+        }));
     }
 
-    log_debug("Server", "Server is running");
-    std::exception_ptr failure;
-    for (;;) {
-        try {
-            io_context_.run();
-            break;
-        } catch (...) {
-            if (!failure) failure = std::current_exception();
-            stop_requested_.store(true, std::memory_order_relaxed);
-            do_stop();
+    log_info("Server", "Running with " + std::to_string(server_config_.worker_threads) + " worker threads");
+    std::vector<std::thread> workers;
+    workers.reserve(server_config_.worker_threads > 0 ? server_config_.worker_threads - 1 : 0);
+    try {
+        for (std::size_t i = 1; i < server_config_.worker_threads; ++i) {
+            workers.emplace_back([this] { run_worker(); });
         }
+    } catch (...) {
+        stop();
+        for (auto& worker : workers) worker.join();
+        throw;
+    }
+    run_worker();
+    for (auto& worker : workers) worker.join();
+
+    std::exception_ptr failure;
+    {
+        std::lock_guard<std::mutex> lock(failure_mutex_);
+        failure = failure_;
     }
     if (failure) std::rethrow_exception(failure);
 }
 
+void Server::run_worker() noexcept {
+    for (;;) {
+        try {
+            io_context_.run();
+            return;
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(failure_mutex_);
+                if (!failure_) failure_ = std::current_exception();
+            }
+            stop();
+        }
+    }
+}
+
 void Server::stop() {
     if (stop_requested_.exchange(true)) return;
-    asio::dispatch(io_context_, [this]() { do_stop(); });
+    asio::dispatch(control_strand_, [this]() { do_stop(); });
 }
 
 void Server::do_stop() {
