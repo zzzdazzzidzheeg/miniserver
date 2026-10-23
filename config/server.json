@@ -19,6 +19,13 @@
     "file": ""
   },
   "database": {
-    "file": "../data/miniserver.sqlite3"
+    "file": "../data/miniserver.sqlite3",
+    "users": {
+      "require_email": true
+    }
+  },
+  "authentication": {
+    "provider": "none",
+    "challenge": "Bearer realm=\"miniserver\""
   }
 }

@@ -11,6 +11,14 @@ struct LoggingConfig {
 
 struct DatabaseConfig {
     std::string file = "../data/miniserver.sqlite3";
+    bool require_user_email = false;
+};
+
+struct AuthenticationConfig {
+    // "none" disables authentication middleware; other names select a
+    // registered provider, such as "bearer".
+    std::string provider = "none";
+    std::string challenge = "Bearer realm=\"miniserver\"";
 };
 
 struct ApplicationConfig {
@@ -18,6 +26,7 @@ struct ApplicationConfig {
     SessionConfig session;
     LoggingConfig logging;
     DatabaseConfig database;
+    AuthenticationConfig authentication;
 };
 
 ApplicationConfig load_application_config(const std::string& path);

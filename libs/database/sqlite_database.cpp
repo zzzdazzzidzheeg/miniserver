@@ -3,6 +3,7 @@
 #include <cctype>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -105,7 +106,99 @@ Value read_column(sqlite3_stmt* statement, int column) {
 
 } // namespace
 
-SQLiteDatabase::SQLiteDatabase(const std::string& file_path) {
+UsersRepository::UsersRepository(SQLiteDatabase& database, bool email_required) noexcept
+    : database_(&database), email_required_(email_required) {}
+
+void UsersRepository::initialize() {
+    database_->execute(
+        "CREATE TABLE IF NOT EXISTS users ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "username TEXT NOT NULL UNIQUE, "
+        "email TEXT, "
+        "password_hash TEXT NOT NULL, "
+        "confirmed INTEGER NOT NULL DEFAULT 0 CHECK (confirmed IN (0, 1))"
+        ")");
+    database_->execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique "
+        "ON users(email) WHERE email IS NOT NULL AND email <> ''");
+}
+
+std::int64_t UsersRepository::add(const NewUser& user) {
+    const auto has_null = [](const std::string& value) {
+        return value.find('\0') != std::string::npos;
+    };
+    if (email_required_ && !user.email) {
+        throw std::invalid_argument("User email is required by configuration");
+    }
+    if (user.username.empty() || user.password_hash.empty() ||
+        has_null(user.username) || has_null(user.password_hash) ||
+        (user.email && (user.email->empty() || has_null(*user.email)))) {
+        throw std::invalid_argument("User username, email, and password hash must be valid non-empty text");
+    }
+
+    Parameters parameters{
+        user.username,
+        user.email ? Value{*user.email} : Value{nullptr},
+        user.password_hash,
+        std::int64_t{user.confirmed ? 1 : 0}
+    };
+    std::lock_guard<std::mutex> lock(database_->connection_mutex_);
+    sqlite3_stmt* statement = prepare(database_->connection_,
+        "INSERT INTO users (username, email, password_hash, confirmed) VALUES (?, ?, ?, ?)",
+        parameters);
+    const int result = sqlite3_step(statement);
+    if (result != SQLITE_DONE) {
+        const std::string detail = sqlite_error_message(database_->connection_, result);
+        sqlite3_finalize(statement);
+        throw std::runtime_error("SQLite user insert failed: " + detail);
+    }
+    sqlite3_finalize(statement);
+    return static_cast<std::int64_t>(sqlite3_last_insert_rowid(database_->connection_));
+}
+
+namespace {
+
+std::optional<UserRecord> find_user(SQLiteDatabase& database, std::string_view sql,
+                                    const Parameters& parameters) {
+    auto rows = database.query(sql, parameters);
+    if (rows.empty()) return std::nullopt;
+    const Row& row = rows.front();
+    const auto email = row.at("email");
+    return UserRecord{
+        std::get<std::int64_t>(row.at("id")),
+        std::get<std::string>(row.at("username")),
+        std::holds_alternative<std::nullptr_t>(email)
+            ? std::optional<std::string>{}
+            : std::optional<std::string>{std::get<std::string>(email)},
+        std::get<std::string>(row.at("password_hash")),
+        std::get<std::int64_t>(row.at("confirmed")) != 0
+    };
+}
+
+constexpr std::string_view user_columns =
+    "SELECT id, username, email, password_hash, confirmed FROM users WHERE ";
+
+} // namespace
+
+std::optional<UserRecord> UsersRepository::find_by_id(std::int64_t id) const {
+    return find_user(*database_, std::string(user_columns) + "id = ?", {id});
+}
+
+std::optional<UserRecord> UsersRepository::find_by_username(std::string_view username) const {
+    return find_user(*database_, std::string(user_columns) + "username = ?", {std::string(username)});
+}
+
+std::optional<UserRecord> UsersRepository::find_by_email(std::string_view email) const {
+    return find_user(*database_, std::string(user_columns) + "email = ?", {std::string(email)});
+}
+
+bool UsersRepository::set_confirmed(std::int64_t id, bool confirmed) {
+    return database_->execute("UPDATE users SET confirmed = ? WHERE id = ?",
+        {std::int64_t{confirmed ? 1 : 0}, id}) > 0;
+}
+
+SQLiteDatabase::SQLiteDatabase(const std::string& file_path, bool user_email_required)
+    : users(*this, user_email_required) {
     if (file_path.empty()) {
         throw std::invalid_argument("SQLite database path cannot be empty");
     }
@@ -137,6 +230,7 @@ SQLiteDatabase::SQLiteDatabase(const std::string& file_path) {
         connection_ = nullptr;
         throw std::runtime_error("SQLite configure busy timeout failed: " + detail);
     }
+    users.initialize();
 }
 
 SQLiteDatabase::~SQLiteDatabase() {

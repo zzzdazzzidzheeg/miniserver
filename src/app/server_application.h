@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <map>
 #include <string>
 
 #include "router.h"
@@ -8,6 +9,7 @@
 #include "application_config.h"
 #include "middleware.h"
 #include "sqlite_database.h"
+#include "authentication_middleware.h"
 
 class ServerApplication {
 public:
@@ -15,6 +17,7 @@ public:
 
     void add_route(std::string method, std::string path, RouteAccess access, Router::Handler handler);
     void add_middleware(Middleware middleware);
+    void add_authenticator(std::string provider, auth::Authenticator authenticator);
     database::SQLiteDatabase& database() noexcept;
     void initialize();
     void run();
@@ -23,6 +26,7 @@ public:
 private:
     ApplicationConfig config_;
     std::unique_ptr<database::SQLiteDatabase> database_;
+    std::map<std::string, auth::Authenticator> authenticators_;
     Router router_;
     std::unique_ptr<Server> server_;
 };

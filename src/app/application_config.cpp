@@ -88,6 +88,36 @@ ApplicationConfig load_application_config(const std::string& path) {
         if (database->contains("file")) {
             config.database.file = database->at("file").get<std::string>();
         }
+        if (const auto users = database->find("users"); users != database->end()) {
+            if (!users->is_object()) {
+                throw std::runtime_error("Config section 'database.users' must be an object");
+            }
+            if (users->contains("require_email")) {
+                if (!users->at("require_email").is_boolean()) {
+                    throw std::runtime_error("Config field 'database.users.require_email' must be boolean");
+                }
+                config.database.require_user_email = users->at("require_email").get<bool>();
+            }
+        }
+    }
+
+    if (const auto authentication = root.find("authentication"); authentication != root.end()) {
+        if (!authentication->is_object()) {
+            throw std::runtime_error("Config section 'authentication' must be an object");
+        }
+        if (authentication->contains("provider")) {
+            config.authentication.provider = authentication->at("provider").get<std::string>();
+        }
+        if (authentication->contains("challenge")) {
+            config.authentication.challenge = authentication->at("challenge").get<std::string>();
+        }
+        if (config.authentication.provider.empty()) {
+            throw std::runtime_error("Config field 'authentication.provider' cannot be empty");
+        }
+        if (config.authentication.challenge.empty() ||
+            config.authentication.challenge.find_first_of("\r\n") != std::string::npos) {
+            throw std::runtime_error("Config field 'authentication.challenge' must be non-empty and single-line");
+        }
     }
 
     config.server.certificate_file = resolve_config_path(config.server.certificate_file);
