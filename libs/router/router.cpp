@@ -33,7 +33,7 @@ std::string path_from_url(const ParsedUrl& parsed_url) {
 Router::Router() {
     // Инициализируем обработчик по умолчанию (404 Not Found)
     default_handler_ = [](const http::request<http::string_body>& req) {
-        log_warning("Router: Route not found for " + std::string(req.method_string()) +
+        log_warning("Router", "Route not found for " + std::string(req.method_string()) +
             " " + std::string(req.target()));
         return http_utils::make_text_response(
             404, 
@@ -66,11 +66,11 @@ HttpResponse Router::route(const http::request<http::string_body>& req) const {
             try {
                 return current(request, downstream);
             } catch (const std::exception& error) {
-                log_error("Router: Middleware exception: " + std::string(error.what()));
+                log_error("Router", "Middleware exception: " + std::string(error.what()));
                 return HttpResponse{http_utils::make_error_response(
                     500, "Internal server error", request.version())};
             } catch (...) {
-                log_error("Router: Unknown middleware exception");
+                log_error("Router", "Unknown middleware exception");
                 return HttpResponse{http_utils::make_error_response(
                     500, "Internal server error", request.version())};
             }
@@ -83,7 +83,7 @@ HttpResponse Router::route(const http::request<http::string_body>& req) const {
 HttpResponse Router::route_request(const http::request<http::string_body>& req) const {
     const ParsedUrl parsed_url = parse_url(req.target());
     if (!parsed_url.valid) {
-        log_warning("Router: Invalid request target");
+        log_warning("Router", "Invalid request target");
         return http_utils::make_error_response(
             400, "Invalid request target: " + parsed_url.error, req.version());
     }
@@ -101,7 +101,7 @@ HttpResponse Router::route_request(const http::request<http::string_body>& req) 
             return it->second(req);
         } 
         catch (const std::exception& e) {
-            log_error("Router: Handler exception: " + std::string(e.what()));
+            log_error("Router", "Handler exception: " + std::string(e.what()));
             // Если обработчик упал с исключением, возвращаем 500
             return http_utils::make_error_response(
                 500,
@@ -110,7 +110,7 @@ HttpResponse Router::route_request(const http::request<http::string_body>& req) 
             );
         } 
         catch (...) {
-            log_error("Router: Unknown handler exception");
+            log_error("Router", "Unknown handler exception");
             // Перехват любых других неизвестных исключений
             return http_utils::make_error_response(500, "Unknown internal error", req.version());
         }

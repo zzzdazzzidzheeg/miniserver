@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
         const std::string config_path = argc > 1 ? argv[1] : find_default_config(argv[0]);
         auto config = load_application_config(config_path);
         Logger::configure(config.logging.level, config.logging.file);
-        log_info("Application: Starting server");
+        log_info("Application", "Starting server");
 
         ServerApplication app(std::move(config));
         app.add_middleware(make_request_logging_middleware());
@@ -47,10 +47,10 @@ int main(int argc, char* argv[]) {
         app.initialize();
         app.run();
         app.stop();
-        log_info("Application: Shutdown complete");
+        log_info("Application", "Shutdown complete");
         return 0;
     } catch (const std::exception& error) {
-        log_error(std::string("Application: Failed to start server: ") + error.what());
+        log_error("Application", std::string("Failed to start server: ") + error.what());
         return 1;
     }
 }

@@ -32,17 +32,17 @@ Server::Server(ServerConfig server_config, SessionConfig session_config,
         );
         ssl_context_.use_certificate_chain_file(server_config_.certificate_file);
         ssl_context_.use_private_key_file(server_config_.private_key_file, boost::asio::ssl::context::pem);
-        log_debug("Server: SSL Context initialized");
+        log_debug("Server", "SSL Context initialized");
         do_accept();
     }
     catch (const std::exception& e) {
-        log_error(std::string("Error initializing server: ") +  e.what());
+        log_error("Server", std::string("Error initializing server: ") + e.what());
 		throw;
 	}
 };
 void Server::do_accept() {
     if (stop_requested_) return;
-    log_debug("Server: Waiting for new connections...");
+    log_debug("Server", "Waiting for new connections...");
     acceptor_.async_accept([this](const boost::system::error_code& ec,
         boost::asio::ip::tcp::socket socket) {
             if (!ec) {
@@ -53,7 +53,7 @@ void Server::do_accept() {
                     active_connections_.fetch_sub(1, std::memory_order_relaxed);
                     boost::system::error_code close_ec;
                     socket.close(close_ec);
-                    log_warning("Server: Connection limit reached");
+                    log_warning("Server", "Connection limit reached");
                 } else {
                     auto ssl_socket = std::make_unique<
                         boost::asio::ssl::stream<boost::asio::ip::tcp::socket>>(
@@ -71,7 +71,7 @@ void Server::do_accept() {
                 }
             }
             if (ec && !stop_requested_ && ec != asio::error::operation_aborted) {
-                log_error(std::string("Server: Accept error: ") + ec.message());
+                log_error("Server", std::string("Accept error: ") + ec.message());
             }
             if (!stop_requested_) do_accept();
         });
@@ -81,12 +81,12 @@ void Server::run() {
     if (!stop_requested_) {
         signals_.async_wait([this](const boost::system::error_code& ec, int signal) {
             if (ec) return;
-            log_info("Server: Received signal " + std::to_string(signal) + ", shutting down");
+            log_info("Server", "Received signal " + std::to_string(signal) + ", shutting down");
             stop();
         });
     }
 
-    log_debug("Server: Server is running");
+    log_debug("Server", "Server is running");
     std::exception_ptr failure;
     for (;;) {
         try {
@@ -115,5 +115,5 @@ void Server::do_stop() {
         if (auto session = weak_session.lock()) session->force_close();
     }
     sessions_.clear();
-    log_info("Server: Stopped");
+    log_info("Server", "Stopped");
 }

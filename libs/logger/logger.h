@@ -12,15 +12,15 @@ class Logger {
 public:
     static void configure(LogLevel level, const std::string& filename = "");
 
-    static void debug(const std::string& message);
-    static void info(const std::string& message);
-    static void warning(const std::string& message);
-    static void error(const std::string& message);
+    static void debug(const std::string& component, const std::string& message);
+    static void info(const std::string& component, const std::string& message);
+    static void warning(const std::string& component, const std::string& message);
+    static void error(const std::string& component, const std::string& message);
 
     static void clear();
 
 private:
-    static void log(LogLevel level, const std::string& message);
+    static void log(LogLevel level, const std::string& component, const std::string& message);
 
     static std::string getTimestamp();
 
@@ -30,7 +30,7 @@ private:
 };
 void log_clear();
 
-void log_debug(const std::string& message);
-void log_info(const std::string& message);
-void log_warning(const std::string& message);
-void log_error(const std::string& message);
+void log_debug(const std::string& component, const std::string& message);
+void log_info(const std::string& component, const std::string& message);
+void log_warning(const std::string& component, const std::string& message);
+void log_error(const std::string& component, const std::string& message);

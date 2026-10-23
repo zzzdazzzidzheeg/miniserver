@@ -32,10 +32,10 @@
 #include "logger.h"
 
 Logger::configure(LogLevel::Info, "logs/server.log");
-Logger::debug("Подробная диагностика");
-Logger::info("Сервер запущен");
-Logger::warning("Подключение к внешнему сервису медленное");
-Logger::error("Не удалось открыть соединение");
+Logger::debug("Server", "Подробная диагностика");
+Logger::info("Server", "Сервер запущен");
+Logger::warning("Network", "Подключение к внешнему сервису медленное");
+Logger::error("Storage", "Не удалось открыть соединение");
 ```
 
 Уровень и путь к файлу задаются при запуске через раздел `logging` в `config/server.json`. В коде настройки применяются один раз через `Logger::configure(...)`. Методы класса для записи:
@@ -48,9 +48,9 @@ Logger::error("Не удалось открыть соединение");
 Также доступны функции в стиле C:
 
 ```cpp
-log_info("Запуск приложения");
-log_warning("Некорректный запрос");
-log_error("Ошибка обработки");
+log_info("Application", "Запуск приложения");
+log_warning("Router", "Некорректный запрос");
+log_error("Server", "Ошибка обработки");
 ```
 
 Доступны следующие функции:
@@ -68,13 +68,13 @@ log_error("Ошибка обработки");
 Каждое сообщение всегда выводится в стандартный вывод (`std::cout`) в формате:
 
 ```text
-[YYYY-MM-DD HH:MM:SS] [LEVEL] message
+[YYYY-MM-DD HH:MM:SS] [LEVEL] Component: message
 ```
 
 Пример:
 
 ```text
-[2026-10-03 12:30:45] [INFO] Сервер запущен
+[2026-10-03 12:30:45] [INFO] Server: Сервер запущен
 ```
 
 ### Вывод в файл
@@ -120,9 +120,9 @@ log_error("Ошибка обработки");
 
 int main() {
     Logger::configure(LogLevel::Info);
-    Logger::info("Сервер стартовал");
-    Logger::warning("Проверка входящих соединений");
-    Logger::error("Не удалось подключиться к базе данных");
+    Logger::info("Server", "Сервер стартовал");
+    Logger::warning("Network", "Проверка входящих соединений");
+    Logger::error("Database", "Не удалось подключиться к базе данных");
 
     return 0;
 }

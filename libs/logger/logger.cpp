@@ -29,23 +29,23 @@ void Logger::configure(LogLevel level, const std::string& filename) {
     minLogLevel_ = level;
 }
 
-void Logger::debug(const std::string& message) {
-    log(LogLevel::Debug, message);
+void Logger::debug(const std::string& component, const std::string& message) {
+    log(LogLevel::Debug, component, message);
 }
 
-void Logger::info(const std::string& message) {
-    log(LogLevel::Info, message);
+void Logger::info(const std::string& component, const std::string& message) {
+    log(LogLevel::Info, component, message);
 }
 
-void Logger::warning(const std::string& message) {
-    log(LogLevel::Warning, message);
+void Logger::warning(const std::string& component, const std::string& message) {
+    log(LogLevel::Warning, component, message);
 }
 
-void Logger::error(const std::string& message) {
-    log(LogLevel::Error, message);
+void Logger::error(const std::string& component, const std::string& message) {
+    log(LogLevel::Error, component, message);
 }
 
-void Logger::log(LogLevel level, const std::string& message) {
+void Logger::log(LogLevel level, const std::string& component, const std::string& message) {
     std::lock_guard lock(logger_mutex);
     if (level < minLogLevel_) return;
 
@@ -58,7 +58,16 @@ void Logger::log(LogLevel level, const std::string& message) {
 	default: levelStr = "UNKNOWN"; break;
     } 
 
-    std::string logMessage = "[" + getTimestamp() + "] [" + levelStr + "] " + message;
+    std::string safe_component = component;
+    std::string safe_message = message;
+    for (char& character : safe_component) {
+        if (character == '\n' || character == '\r') character = ' ';
+    }
+    for (char& character : safe_message) {
+        if (character == '\n' || character == '\r') character = ' ';
+    }
+    std::string logMessage = "[" + getTimestamp() + "] [" + levelStr + "] " +
+        safe_component + ": " + safe_message;
 
     std::cout << logMessage << std::endl;
 
@@ -97,25 +106,25 @@ void Logger::clear() {
         fileStream_.open(currentFilename_, std::ios::app);
         if (!fileStream_) return;
     }
-    log_info("Logger: Log file cleared");
+    log_info("Logger", "Log file cleared");
 }
 
-void log_debug(const std::string& message) {
-    Logger::debug(message);
+void log_debug(const std::string& component, const std::string& message) {
+    Logger::debug(component, message);
 }
 
-void log_info(const std::string& message) {
-    Logger::info(message);
+void log_info(const std::string& component, const std::string& message) {
+    Logger::info(component, message);
 }
 
 void log_clear() {
     Logger::clear();
 }
 
-void log_warning(const std::string& message) {
-    Logger::warning(message);
+void log_warning(const std::string& component, const std::string& message) {
+    Logger::warning(component, message);
 }
 
-void log_error(const std::string& message) {
-    Logger::error(message);
+void log_error(const std::string& component, const std::string& message) {
+    Logger::error(component, message);
 }

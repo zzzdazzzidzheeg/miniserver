@@ -1,6 +1,7 @@
 #include "session.h"
 #include "logger.h"
 #include <iostream>
+#include <string_view>
 
 Session::Session(asio::ssl::stream<asio::ip::tcp::socket> socket,
     RequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
@@ -21,7 +22,7 @@ void Session::arm_deadline(std::chrono::seconds timeout) {
     deadline_.expires_after(timeout);
     deadline_.async_wait([self = shared_from_this()](beast::error_code ec) {
         if (!ec) {
-            log_warning("Session: Connection deadline exceeded");
+            log_warning("Session", "Connection deadline exceeded");
             beast::error_code close_ec;
             self->socket_.lowest_layer().cancel(close_ec);
             self->socket_.lowest_layer().close(close_ec);
@@ -35,24 +36,24 @@ void Session::cancel_deadline() {
 
 void Session::do_handshake() {
     arm_deadline(config_.handshake_timeout);
-    log_debug("Session: " + socket_.lowest_layer().remote_endpoint().address().to_string() + ": Doing handshake...");
+    log_debug("Session", socket_.lowest_layer().remote_endpoint().address().to_string() + ": Doing handshake...");
     socket_.async_handshake(
         ssl::stream_base::server,
         [self = shared_from_this()](beast::error_code ec) {
             if (!ec) {
                 self->cancel_deadline();
-                log_debug("Session: SSL handshake successful");
+                log_debug("Session", "SSL handshake successful");
                 self->do_read(); 
             }
             else {
-                log_error(std::string("Session: SSL handshake error: ") + ec.message());
+                log_error("Session", std::string("SSL handshake error: ") + ec.message());
             }
         }
     );
 }
 
 void Session::start() {
-	log_info("Session: New connection from: " + socket_.lowest_layer().remote_endpoint().address().to_string());
+	log_info("Session", "New connection from: " + socket_.lowest_layer().remote_endpoint().address().to_string());
     do_handshake();
 }
 
@@ -65,7 +66,7 @@ void Session::force_close() {
 }
 
 void Session::do_read() {
-    log_info("Session: Reading...");
+    log_debug("Session", "Reading request");
     parser_.header_limit(config_.header_limit);
     parser_.body_limit(config_.body_limit);
     arm_deadline(config_.read_timeout);
@@ -82,20 +83,23 @@ void Session::do_read() {
 void Session::handle_request() {
 try {
         // 1. Логируем, что запрос получен (помогает при отладке)
-        log_debug("Session: Received " + std::string(parser_.get().method_string()) +
-                  " " + std::string(parser_.get().target()));
+        const auto target = parser_.get().target();
+        const std::string_view target_view(target.data(), target.size());
+        const auto query_start = target_view.find('?');
+        log_debug("Session", "Received " + std::string(parser_.get().method_string()) +
+                  " " + std::string(target_view.substr(0, query_start)));
 
         // 2. Создаем объект ответа с типом тела string_body
         auto request = parser_.release();
 
         auto response = request_handler_(std::move(request));
         const auto status = std::visit([](const auto& message) { return message.result_int(); }, response);
-        log_info("Session: Sending HTTP response " + std::to_string(status));
+        log_info("Session", "Sending HTTP response " + std::to_string(status));
         send_response(std::move(response));
         // 3. Устанавливаем статус 200 OK и версию HTTP из запроса
     }
     catch (const std::exception& e) {
-        log_error("Session: Critical error: " + std::string(e.what()));
+        log_error("Session", "Request handling exception: " + std::string(e.what()));
         // Фолбэк ответ генерируем прямо здесь, так как это уровень сети
         HttpStringResponse err_res{http::status::internal_server_error, parser_.get().version()};
         err_res.body() = "Internal Server Error";
@@ -125,7 +129,7 @@ void Session::write_response(http::response<Body> res) {
                 self->do_shutdown();
             }
             else {
-                log_error("Session: Response write failed: " + ec.message());
+                log_error("Session", "Response write failed: " + ec.message());
                 self->fail(ec, "write");
             }
         }
@@ -135,7 +139,7 @@ void Session::write_response(http::response<Body> res) {
 void Session::fail(beast::error_code ec, char const* what) {
     // Игнорируем штатные ситуации
     if (ec == beast::http::error::body_limit) {
-        log_warning("Session: Request body too large");
+        log_warning("Session", "Request body too large");
         // Можно отправить 413 Payload Too Large
         HttpStringResponse err_res{http::status::payload_too_large, parser_.get().version()};
         err_res.body() = "Request body too large";
@@ -144,20 +148,20 @@ void Session::fail(beast::error_code ec, char const* what) {
         return;
     }
     if (ec == asio::error::operation_aborted) {
-        log_debug("Session: Operation aborted");
+        log_debug("Session", "Operation aborted");
          return; // Операция отменена
     }
     if (ec == beast::http::error::end_of_stream) {
-        log_debug("Session: End of stream");
+        log_debug("Session", "End of stream");
         return; // Клиент закрыл соединение
     }
     if (ec == asio::error::eof) {
-        log_debug("Session: End of file");
+        log_debug("Session", "End of file");
         return; // Конец потока
     }
     
     // Логируем только реальные ошибки
-    log_error(std::string("Session: ") + what + ": " + ec.message());
+    log_error("Session", std::string(what) + " failed: " + ec.message());
     do_shutdown();
 }
 
@@ -167,7 +171,7 @@ void Session::do_shutdown() {
     }
     closed_ = true;
     cancel_deadline();
-    log_debug("Session: Shutting down SSL connection...");
+    log_debug("Session", "Shutting down SSL connection...");
 
     arm_deadline(config_.shutdown_timeout);
     socket_.async_shutdown(
@@ -176,7 +180,7 @@ void Session::do_shutdown() {
             if (ec) {
                 // Игнорируем ошибки при shutdown (клиент мог уже закрыть соединение)
                 if (ec != asio::error::eof) {
-                    log_error("Session: Shutdown error: " + ec.message());
+                    log_error("Session", "Shutdown error: " + ec.message());
                 }
             }
         });
