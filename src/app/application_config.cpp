@@ -111,6 +111,9 @@ ApplicationConfig load_application_config(const std::string& path) {
         if (authentication->contains("challenge")) {
             config.authentication.challenge = authentication->at("challenge").get<std::string>();
         }
+        config.authentication.access_token_lifetime_seconds = positive_value<std::int64_t>(
+            *authentication, "access_token_lifetime_seconds",
+            config.authentication.access_token_lifetime_seconds);
         if (config.authentication.provider.empty()) {
             throw std::runtime_error("Config field 'authentication.provider' cannot be empty");
         }

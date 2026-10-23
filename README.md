@@ -4,11 +4,13 @@
 Данный проект является минимальным прототипом сервера. Архитектура позволяет относительно легко добавлять новые маршруты запросов и их обработку. Сам сервер являяется асинхронным, логгер внутри поддерживает многопоточность, так что если какие-то задачи потребуют разбиения на несколько потоков, в каждом из них будет безопасно вызывать логгер. Хорошо подходит для проектирования домашнего сервера
 
 
-Минимальный HTTPS-сервер на C++17. В приложении зарегистрированы три маршрута:
+Минимальный HTTPS-сервер на C++17. В приложении зарегистрированы маршруты:
 
 - `GET /api/ping` — проверка доступности сервера.
 - `GET /api/echo` — разбирает JSON из тела запроса и возвращает его вместе с методом и временной меткой. Некорректный JSON приводит к ответу `400 Bad Request`.
 - `GET /api/info` — версия сервера, время работы и список доступных маршрутов.
+- `POST /api/auth/register` — создаёт пользователя в SQLite.
+- `POST /api/auth/login` — проверяет пароль и выдаёт bearer access token.
 
 Ответы обработчиков имеют тип `application/json`. Неизвестный маршрут возвращает `404 Not Found`.
 
@@ -62,18 +64,18 @@ app.run();
 
 ### Аутентификация
 
-В `authentication.provider` указывается имя зарегистрированного провайдера. Значение `none` (по умолчанию) отключает middleware аутентификации. Если выбран другой провайдер, приложение должно зарегистрировать его до `initialize()`; иначе запуск завершится ошибкой. Поле `authentication.challenge` задаёт заголовок `WWW-Authenticate` для отказа в аутентификации.
+В `authentication.provider` указывается имя провайдера. Примерный `main` поддерживает значения `none` и `bearer`: первое отключает auth middleware и auth routes, второе включает SQLite account service, bearer-проверку и маршруты login/register. В собственном приложении можно зарегистрировать другие именованные провайдеры через `add_authenticator()` и выбрать их этим же параметром. Неизвестное имя без зарегистрированного провайдера приводит к ошибке инициализации. Поле `authentication.challenge` задаёт заголовок `WWW-Authenticate` для отказа в аутентификации. `authentication.access_token_lifetime_seconds` задаёт срок действия access token; по умолчанию — 3600 секунд, допустимый максимум — 30 дней.
 
-Встроенный bearer-адаптер извлекает токен из `Authorization: Bearer <token>`, но не хранит пользователей и сам по себе не считает токен действительным. Приложение передаёт callback, который проверяет токен, его срок действия и отзыв:
+Пример приложения регистрирует bearer-провайдер, который извлекает токен из `Authorization: Bearer <token>` и проверяет его в SQLite. Токены хранятся в базе в виде SHA-256 хеша и имеют срок действия из конфига:
 
 ```cpp
 app.add_authenticator("bearer", auth::make_bearer_authenticator(
     [&account_service](std::string_view token) {
-        return account_service.validate_access_token(token);
+        return account_service.authenticate(token);
     }));
 ```
 
-Login- и registration-handler создаются через `auth::make_login_handler()` и `auth::make_registration_handler()`. Их нужно явно зарегистрировать как публичные маршруты. Login-handler принимает JSON с непустыми `username` и `password`, а callback приложения проверяет пароль и выдаёт токен. Registration-handler передаёт весь JSON callback приложения, поэтому приложение определяет поля регистрации, хранение пользователя и необходимость подтверждения по email, телефону или другим способом.
+Login- и registration-handler создаются через `auth::make_login_handler()` и `auth::make_registration_handler()` и регистрируются как публичные маршруты. Пример `main` использует `auth::SQLiteAccountService`: регистрация принимает `username`, `password` и email, если `database.users.require_email` включён; вход принимает `username` и `password`. Регистрация в примере сразу активирует аккаунт. Если приложению нужно подтверждение по email, телефону или другим способом, оно должно реализовать собственный callback регистрации и активировать пользователя после подтверждения.
 
 ```cpp
 app.add_route("POST", "/api/auth/login", RouteAccess::Public,
@@ -88,7 +90,7 @@ app.add_route("POST", "/api/auth/register", RouteAccess::Public,
     }));
 ```
 
-Эти фабрики не создают схему пользователей, не хешируют пароли, не выдают токены и не отправляют сообщения подтверждения: это ответственность переданных приложением сервисов. В демонстрационном `main` провайдер остаётся `none`, а маршруты login/register не подключены, потому что в проекте пока нет реализации хранилища учётных записей и выдачи токенов.
+Для пользовательского сервиса можно по-прежнему передать собственные callbacks в фабрики handler-ов. SQLite account service хеширует пароли PBKDF2-HMAC-SHA256 с 600 000 итераций и случайной солью; детали параметров хранятся вместе с хешем. Параметр соответствует рекомендации OWASP для PBKDF2-HMAC-SHA256; перед коммерческой эксплуатацией нужно измерить нагрузку и вынести вычисление хеша из единственного event-loop потока в ограниченный worker pool. Встроенный сервис не отправляет подтверждения и не предоставляет logout/revocation endpoint.
 
 ## Требования
 
@@ -161,6 +163,20 @@ curl --insecure \
 ```sh
 curl --insecure https://localhost:4433/api/info
 ```
+
+Регистрация и вход (примерная конфигурация требует email при регистрации):
+
+```sh
+curl --insecure -X POST https://localhost:4433/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","email":"alice@example.test","password":"example-password"}'
+
+curl --insecure -X POST https://localhost:4433/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"example-password"}'
+```
+
+Успешный вход возвращает `access_token`; используйте его для защищённого маршрута в заголовке `Authorization: Bearer <access_token>`.
 
 # ВАЖНО!!!
 

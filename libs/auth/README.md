@@ -2,7 +2,7 @@
 
 Authentication is optional. Mark each route as `RouteAccess::Public` or `RouteAccess::Authenticated`; the router fails closed if a protected route reaches its handler without a principal.
 
-The component does not store users or issue credentials. The application provides an authenticator that validates credentials and returns a principal, or `std::nullopt` when credentials are missing or invalid. The built-in bearer adapter extracts a Bearer token and delegates validation to an application callback:
+The generic authentication middleware does not store users or issue credentials. The application provides an authenticator that validates credentials and returns a principal, or `std::nullopt` when credentials are missing or invalid. The built-in bearer adapter extracts a Bearer token and delegates validation to an application callback:
 
 ```cpp
 #include "authentication_middleware.h"
@@ -29,7 +29,7 @@ Authentication establishes identity. Handlers or application services must still
 
 ## Login and registration handlers
 
-The optional handler factories provide common HTTP and JSON handling while leaving credential storage and account policy to the application. Register the resulting routes as `RouteAccess::Public`:
+The handler factories provide common HTTP and JSON handling while leaving credential storage and account policy configurable. The sample app wires them to `auth::SQLiteAccountService`; applications can instead provide their own callbacks:
 
 ```cpp
 app.add_route("POST", "/api/auth/login", RouteAccess::Public,
@@ -44,3 +44,5 @@ app.add_route("POST", "/api/auth/register", RouteAccess::Public,
 ```
 
 Login expects a JSON object with non-empty `username` and `password` strings. The callback verifies the credentials and issues a token; invalid credentials receive a generic `401`. Registration passes its JSON object to the application callback, which can accept extra fields, persist the account, send confirmation messages, or reject signup. It returns `201` for an immediately created account, `202` when confirmation is required, and a generic `400` when registration is rejected. The factories do not create users, hash passwords, issue tokens, or send email; those policies belong to the supplied service.
+
+`SQLiteAccountService` is the included sample implementation. It stores users through `database::SQLiteDatabase::users`, stores only SHA-256 hashes of random opaque access tokens, and rejects expired tokens. Passwords are hashed with PBKDF2-HMAC-SHA256 and a per-password random salt. The sample registration activates accounts immediately and does not send email; use custom callbacks for confirmation flows. The sample does not expose token revocation/logout. Password hashing is synchronous, so high-load applications should move it off the server's single event-loop thread.

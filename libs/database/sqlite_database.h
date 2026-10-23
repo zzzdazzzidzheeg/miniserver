@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -31,6 +32,11 @@ struct UserRecord {
     std::optional<std::string> email;
     std::string password_hash;
     bool confirmed;
+};
+
+class DuplicateUserError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 class UsersRepository {

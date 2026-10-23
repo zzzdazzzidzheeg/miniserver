@@ -45,21 +45,30 @@ struct EchoHandler {
 struct InfoHandler {
     std::string server_version;
     std::time_t start_time;
+    bool authentication_endpoints_enabled;
 
-    explicit InfoHandler(std::string version)
-        : server_version(std::move(version)), start_time(std::time(nullptr)) {}
+    explicit InfoHandler(std::string version, bool auth_endpoints_enabled = false)
+        : server_version(std::move(version)), start_time(std::time(nullptr)),
+          authentication_endpoints_enabled(auth_endpoints_enabled) {}
 
     http::response<http::string_body> operator()(HttpRequestContext& context) const {
         const auto& request = context.request;
+        nlohmann::json endpoints = nlohmann::json::array({
+            {{"method", "GET"}, {"path", "/api/ping"}, {"authentication_required", false}},
+            {{"method", "GET"}, {"path", "/api/echo"}, {"authentication_required", false}},
+            {{"method", "GET"}, {"path", "/api/info"}, {"authentication_required", false}}
+        });
+        if (authentication_endpoints_enabled) {
+            endpoints.push_back({{"method", "POST"}, {"path", "/api/auth/register"},
+                {"authentication_required", false}});
+            endpoints.push_back({{"method", "POST"}, {"path", "/api/auth/login"},
+                {"authentication_required", false}});
+        }
         const nlohmann::json response = {
             {"server", "miniserver"},
             {"version", server_version},
             {"uptime_seconds", std::time(nullptr) - start_time},
-            {"endpoints", {
-                {{"method", "GET"}, {"path", "/api/ping"}, {"authentication_required", false}},
-                {{"method", "GET"}, {"path", "/api/echo"}, {"authentication_required", false}},
-                {{"method", "GET"}, {"path", "/api/info"}, {"authentication_required", false}}
-            }}
+            {"endpoints", std::move(endpoints)}
         };
         return http_utils::make_json_response(200, response, request.version());
     }

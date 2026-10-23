@@ -25,7 +25,8 @@
     }
   },
   "authentication": {
-    "provider": "none",
-    "challenge": "Bearer realm=\"miniserver\""
+    "provider": "bearer",
+    "challenge": "Bearer realm=\"miniserver\"",
+    "access_token_lifetime_seconds": 3600
   }
 }

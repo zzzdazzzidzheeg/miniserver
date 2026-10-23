@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include "server_config.h"
 #include "logger.h"
@@ -19,6 +20,7 @@ struct AuthenticationConfig {
     // registered provider, such as "bearer".
     std::string provider = "none";
     std::string challenge = "Bearer realm=\"miniserver\"";
+    std::int64_t access_token_lifetime_seconds = 3600;
 };
 
 struct ApplicationConfig {

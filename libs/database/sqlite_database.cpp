@@ -148,8 +148,13 @@ std::int64_t UsersRepository::add(const NewUser& user) {
         parameters);
     const int result = sqlite3_step(statement);
     if (result != SQLITE_DONE) {
+        const int extended_result = sqlite3_extended_errcode(database_->connection_);
         const std::string detail = sqlite_error_message(database_->connection_, result);
         sqlite3_finalize(statement);
+        if (extended_result == SQLITE_CONSTRAINT_UNIQUE ||
+            extended_result == SQLITE_CONSTRAINT_PRIMARYKEY) {
+            throw DuplicateUserError("Username or email is already registered");
+        }
         throw std::runtime_error("SQLite user insert failed: " + detail);
     }
     sqlite3_finalize(statement);
