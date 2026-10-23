@@ -46,10 +46,13 @@ struct InfoHandler {
     std::string server_version;
     std::time_t start_time;
     bool authentication_endpoints_enabled;
+    bool registration_email_required;
 
-    explicit InfoHandler(std::string version, bool auth_endpoints_enabled = false)
+    explicit InfoHandler(std::string version, bool auth_endpoints_enabled = false,
+                         bool email_required = false)
         : server_version(std::move(version)), start_time(std::time(nullptr)),
-          authentication_endpoints_enabled(auth_endpoints_enabled) {}
+          authentication_endpoints_enabled(auth_endpoints_enabled),
+          registration_email_required(email_required) {}
 
     http::response<http::string_body> operator()(HttpRequestContext& context) const {
         const auto& request = context.request;
@@ -63,12 +66,15 @@ struct InfoHandler {
                 {"authentication_required", false}});
             endpoints.push_back({{"method", "POST"}, {"path", "/api/auth/login"},
                 {"authentication_required", false}});
+            endpoints.push_back({{"method", "GET"}, {"path", "/api/auth/me"},
+                {"authentication_required", true}});
         }
         const nlohmann::json response = {
             {"server", "miniserver"},
             {"version", server_version},
             {"uptime_seconds", std::time(nullptr) - start_time},
-            {"endpoints", std::move(endpoints)}
+            {"endpoints", std::move(endpoints)},
+            {"registration_email_required", registration_email_required}
         };
         return http_utils::make_json_response(200, response, request.version());
     }

@@ -22,6 +22,7 @@ public:
     // Регистрация маршрута
     void add_route(std::string method, std::string path, RouteAccess access, Handler handler);
     void add_middleware(Middleware middleware);
+    void set_not_found_handler(Handler handler);
     
     // Основной метод маршрутизации
     HttpResponse route(const http::request<http::string_body>& req) const;

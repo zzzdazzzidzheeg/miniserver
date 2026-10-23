@@ -18,6 +18,7 @@ public:
     void add_route(std::string method, std::string path, RouteAccess access, Router::Handler handler);
     void add_middleware(Middleware middleware);
     void add_authenticator(std::string provider, auth::Authenticator authenticator);
+    void set_not_found_handler(Router::Handler handler);
     database::SQLiteDatabase& database() noexcept;
     void initialize();
     void run();

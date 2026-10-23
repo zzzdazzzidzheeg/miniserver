@@ -123,12 +123,31 @@ ApplicationConfig load_application_config(const std::string& path) {
         }
     }
 
+    if (const auto application = root.find("application"); application != root.end()) {
+        if (!application->is_object()) {
+            throw std::runtime_error("Config section 'application' must be an object");
+        }
+        if (application->contains("mode")) {
+            const auto mode = application->at("mode").get<std::string>();
+            if (mode == "api-only") config.mode = ApplicationMode::ApiOnly;
+            else if (mode == "web") config.mode = ApplicationMode::Web;
+            else throw std::runtime_error("Config field 'application.mode' must be api-only or web");
+        }
+        if (application->contains("web_root")) {
+            config.web_root = application->at("web_root").get<std::string>();
+        }
+    }
+
     config.server.certificate_file = resolve_config_path(config.server.certificate_file);
     config.server.private_key_file = resolve_config_path(config.server.private_key_file);
     if (!config.logging.file.empty()) config.logging.file = resolve_config_path(config.logging.file);
     if (config.database.file != ":memory:") {
         config.database.file = resolve_config_path(config.database.file);
     }
+    if (config.web_root.empty()) {
+        throw std::runtime_error("Config field 'application.web_root' cannot be empty");
+    }
+    config.web_root = resolve_config_path(config.web_root);
 
     if (config.server.address.empty()) throw std::runtime_error("Config field 'address' cannot be empty");
     if (config.server.certificate_file.empty() || config.server.private_key_file.empty()) {

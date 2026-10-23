@@ -28,6 +28,10 @@ void ServerApplication::add_authenticator(std::string provider, auth::Authentica
     }
 }
 
+void ServerApplication::set_not_found_handler(Router::Handler handler) {
+    router_.set_not_found_handler(std::move(handler));
+}
+
 database::SQLiteDatabase& ServerApplication::database() noexcept {
     return *database_;
 }

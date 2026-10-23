@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniServer</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">C++ HTTPS API</p>
+      <h1>MiniServer</h1>
+      <p>A small browser client talking to the server API.</p>
+      <button id="ping-button" type="button">Check server</button>
+      <output id="status" aria-live="polite">Checking server…</output>
+    </header>
+
+    <section class="panel">
+      <h2>API response</h2>
+      <pre id="result" aria-live="polite">Press “Check server” to call GET /api/ping.</pre>
+    </section>
+
+    <section id="auth-panel" class="auth-grid" hidden>
+      <form id="register-form" class="panel">
+        <h2>Create account</h2>
+        <label>Username <input name="username" autocomplete="username" required maxlength="255"></label>
+        <label>Email <input name="email" type="email" autocomplete="email" maxlength="320"></label>
+        <label>Password <input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button type="submit">Register</button>
+      </form>
+
+      <form id="login-form" class="panel">
+        <h2>Sign in</h2>
+        <label>Username <input name="username" autocomplete="username" required maxlength="255"></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Sign in</button>
+        <button id="me-button" type="button" class="secondary" disabled>Check signed-in user</button>
+      </form>
+    </section>
+
+    <footer>Demo page · API requests use this server’s HTTPS origin.</footer>
+  </main>
+</body>
+</html>

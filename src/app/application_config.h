@@ -23,12 +23,19 @@ struct AuthenticationConfig {
     std::int64_t access_token_lifetime_seconds = 3600;
 };
 
+enum class ApplicationMode {
+    ApiOnly,
+    Web
+};
+
 struct ApplicationConfig {
     ServerConfig server;
     SessionConfig session;
     LoggingConfig logging;
     DatabaseConfig database;
     AuthenticationConfig authentication;
+    ApplicationMode mode = ApplicationMode::ApiOnly;
+    std::string web_root = "../static";
 };
 
 ApplicationConfig load_application_config(const std::string& path);

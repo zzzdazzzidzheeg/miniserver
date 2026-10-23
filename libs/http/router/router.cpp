@@ -55,6 +55,11 @@ void Router::add_middleware(Middleware middleware) {
     middleware_.push_back(std::move(middleware));
 }
 
+void Router::set_not_found_handler(Handler handler) {
+    if (!handler) throw std::invalid_argument("Not-found handler cannot be empty");
+    default_handler_ = std::move(handler);
+}
+
 HttpResponse Router::route(const http::request<http::string_body>& req) const {
     const ParsedUrl parsed_url = parse_url(req.target());
     bool authentication_required = false;

@@ -1,5 +1,6 @@
 add_library(router router.cpp
-    url_parser.cpp)
+    url_parser.cpp
+    static_file_handler.cpp)
 
 target_compile_features(router PUBLIC cxx_std_17)
 
