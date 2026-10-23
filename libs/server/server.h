@@ -22,6 +22,7 @@ class Session;
 class Server {
 public:
 	Server(ServerConfig server_config, SessionConfig session_config, RequestHandler handler);
+	Server(ServerConfig server_config, SessionConfig session_config, ContextRequestHandler handler);
 	void run();
 	void stop();
 private:
@@ -37,7 +38,7 @@ private:
 	boost::asio::ssl::context ssl_context_;
 	boost::asio::ip::tcp::acceptor acceptor_;
 	asio::signal_set signals_;
-	RequestHandler request_handler_;
+	ContextRequestHandler request_handler_;
 	std::vector<std::weak_ptr<Session>> sessions_;
 	std::mutex failure_mutex_;
 	std::exception_ptr failure_;

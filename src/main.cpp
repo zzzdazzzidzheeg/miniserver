@@ -9,7 +9,6 @@
 #include "handlers.h"
 #include "server_application.h"
 #include "application_config.h"
-#include "request_logging.h"
 #include "auth_handlers.h"
 #include "sqlite_account_service.h"
 #include "authentication_middleware.h"
@@ -80,7 +79,6 @@ int main(int argc, char* argv[]) {
                         {{"subject", context.principal->subject}}, context.request.version());
                 });
         }
-        app.add_middleware(make_request_logging_middleware());
         app.add_route("GET", "/api/ping", RouteAccess::Public, handlers::PingHandler{});
         app.add_route("GET", "/api/echo", RouteAccess::Public, handlers::EchoHandler{});
         app.add_route("GET", "/api/info", RouteAccess::Public,

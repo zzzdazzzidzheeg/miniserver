@@ -85,6 +85,59 @@ ApplicationConfig load_application_config(const std::string& path) {
     if (logging.contains("level")) config.logging.level = parse_log_level(logging.at("level").get<std::string>());
     if (logging.contains("file")) config.logging.file = logging.at("file").get<std::string>();
 
+    if (const auto middleware = root.find("middleware"); middleware != root.end()) {
+        if (!middleware->is_object()) {
+            throw std::runtime_error("Config section 'middleware' must be an object");
+        }
+        if (const auto request_logging = middleware->find("request_logging");
+            request_logging != middleware->end()) {
+            if (!request_logging->is_object()) {
+                throw std::runtime_error("Config section 'middleware.request_logging' must be an object");
+            }
+            if (request_logging->contains("enabled")) {
+                if (!request_logging->at("enabled").is_boolean()) {
+                    throw std::runtime_error("Config field 'middleware.request_logging.enabled' must be boolean");
+                }
+                config.middleware.request_logging_enabled = request_logging->at("enabled").get<bool>();
+            }
+        }
+        if (const auto statistics = middleware->find("statistics"); statistics != middleware->end()) {
+            if (!statistics->is_object()) {
+                throw std::runtime_error("Config section 'middleware.statistics' must be an object");
+            }
+            if (statistics->contains("enabled")) {
+                if (!statistics->at("enabled").is_boolean()) {
+                    throw std::runtime_error("Config field 'middleware.statistics.enabled' must be boolean");
+                }
+                config.middleware.statistics_enabled = statistics->at("enabled").get<bool>();
+            }
+        }
+        if (const auto rate_limit = middleware->find("rate_limit"); rate_limit != middleware->end()) {
+            if (!rate_limit->is_object()) {
+                throw std::runtime_error("Config section 'middleware.rate_limit' must be an object");
+            }
+            if (rate_limit->contains("enabled")) {
+                if (!rate_limit->at("enabled").is_boolean()) {
+                    throw std::runtime_error("Config field 'middleware.rate_limit.enabled' must be boolean");
+                }
+                config.middleware.rate_limit_enabled = rate_limit->at("enabled").get<bool>();
+            }
+            config.middleware.rate_limit_requests = positive_value<std::size_t>(
+                *rate_limit, "requests", config.middleware.rate_limit_requests);
+            config.middleware.rate_limit_window_seconds = positive_value<std::int64_t>(
+                *rate_limit, "window_seconds", config.middleware.rate_limit_window_seconds);
+            config.middleware.rate_limit_max_tracked_clients = positive_value<std::size_t>(
+                *rate_limit, "max_tracked_clients", config.middleware.rate_limit_max_tracked_clients);
+            if (rate_limit->contains("key")) {
+                const auto key = rate_limit->at("key").get<std::string>();
+                if (key == "principal-or-ip") config.middleware.rate_limit_by_principal = true;
+                else if (key == "ip") config.middleware.rate_limit_by_principal = false;
+                else throw std::runtime_error(
+                    "Config field 'middleware.rate_limit.key' must be principal-or-ip or ip");
+            }
+        }
+    }
+
     if (const auto database = root.find("database"); database != root.end()) {
         if (!database->is_object()) {
             throw std::runtime_error("Config section 'database' must be an object");

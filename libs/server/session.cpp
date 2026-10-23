@@ -4,7 +4,7 @@
 #include <string_view>
 
 Session::Session(asio::ssl::stream<asio::ip::tcp::socket> socket,
-    RequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
+    ContextRequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
     : socket_(std::move(socket)),
     deadline_(socket_.get_executor()),
     request_handler_(std::move(request_handler)),
@@ -55,7 +55,8 @@ void Session::do_handshake() {
 void Session::start() {
 	const auto self = shared_from_this();
 	asio::dispatch(socket_.get_executor(), [self] {
-		log_info("Session", "New connection from: " + self->socket_.lowest_layer().remote_endpoint().address().to_string());
+		self->client_address_ = self->socket_.lowest_layer().remote_endpoint().address().to_string();
+		log_info("Session", "New connection from: " + self->client_address_);
 		self->do_handshake();
 	});
 }
@@ -98,7 +99,7 @@ try {
         // 2. Создаем объект ответа с типом тела string_body
         auto request = parser_.release();
 
-        auto response = request_handler_(std::move(request));
+        auto response = request_handler_(request, client_address_);
         const auto status = std::visit([](const auto& message) { return message.result_int(); }, response);
         log_info("Session", "Sending HTTP response " + std::to_string(status));
         send_response(std::move(response));

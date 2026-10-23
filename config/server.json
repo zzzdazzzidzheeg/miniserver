@@ -23,6 +23,21 @@
     "level": "info",
     "file": ""
   },
+  "middleware": {
+    "request_logging": {
+      "enabled": true
+    },
+    "statistics": {
+      "enabled": true
+    },
+    "rate_limit": {
+      "enabled": false,
+      "key": "principal-or-ip",
+      "requests": 60,
+      "window_seconds": 60,
+      "max_tracked_clients": 10000
+    }
+  },
   "database": {
     "file": "../data/miniserver.sqlite3",
     "users": {

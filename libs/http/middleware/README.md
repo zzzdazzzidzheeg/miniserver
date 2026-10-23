@@ -13,4 +13,4 @@ app.add_middleware([](HttpRequestContext& context, const MiddlewareNext& next) {
 });
 ```
 
-Middleware runs in registration order. The first registered middleware wraps the rest of the chain. Call `next(context)` at most once when continuing. The context contains the original request, route access requirement, and an optional authenticated principal. `make_request_logging_middleware()` is provided as a built-in example. For route authentication, use the component in `libs/auth/`.
+The router selects the route before starting middleware. Middleware runs in registration order, with the first registered middleware wrapping the rest of the chain. Call `next(context)` at most once when continuing. The context contains the original request, optional `matched_route` metadata (method, path, and access policy), and an optional authenticated principal. A middleware can therefore apply route-specific policy without redoing route matching. `make_request_logging_middleware()` is provided as a built-in example. For route authentication, use the component in `libs/auth/`.

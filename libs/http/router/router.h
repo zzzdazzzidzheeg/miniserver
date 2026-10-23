@@ -25,16 +25,18 @@ public:
     void set_not_found_handler(Handler handler);
     
     // Основной метод маршрутизации
-    HttpResponse route(const http::request<http::string_body>& req) const;
+    HttpResponse route(const http::request<http::string_body>& req,
+                       std::string client_address = {}) const;
     void setup_router();
 
 private:
-    HttpResponse route_request(HttpRequestContext& context) const;
-
     struct Route {
         Handler handler;
         RouteAccess access;
     };
+
+    HttpResponse dispatch_request(HttpRequestContext& context, const Route* route,
+                                  bool valid_target, const std::string& target_error) const;
 
     // Ключ: "METHOD PATH" (например, "GET /api/status")
     std::unordered_map<std::string, Route> routes_;

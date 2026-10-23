@@ -3,6 +3,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "router.h"
 #include "server.h"
@@ -10,6 +11,7 @@
 #include "middleware.h"
 #include "sqlite_database.h"
 #include "authentication_middleware.h"
+#include "statistics_middleware.h"
 
 class ServerApplication {
 public:
@@ -20,6 +22,7 @@ public:
     void add_authenticator(std::string provider, auth::Authenticator authenticator);
     void set_not_found_handler(Router::Handler handler);
     database::SQLiteDatabase& database() noexcept;
+    std::shared_ptr<RequestStatistics> request_statistics() const noexcept;
     void initialize();
     void run();
     void stop();
@@ -27,6 +30,8 @@ public:
 private:
     ApplicationConfig config_;
     std::unique_ptr<database::SQLiteDatabase> database_;
+    std::shared_ptr<RequestStatistics> request_statistics_;
+    std::vector<Middleware> middlewares_;
     std::map<std::string, auth::Authenticator> authenticators_;
     Router router_;
     std::unique_ptr<Server> server_;

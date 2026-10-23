@@ -10,6 +10,14 @@
 
 Server::Server(ServerConfig server_config, SessionConfig session_config,
             RequestHandler request_handler)
+    : Server(std::move(server_config), std::move(session_config),
+        ContextRequestHandler([handler = std::move(request_handler)](
+                const HttpRequest& request, std::string_view) {
+            return handler(request);
+        })) {}
+
+Server::Server(ServerConfig server_config, SessionConfig session_config,
+            ContextRequestHandler request_handler)
             : server_config_(std::move(server_config)),
               session_config_(std::move(session_config)),
               io_context_(boost::asio::io_context()),
