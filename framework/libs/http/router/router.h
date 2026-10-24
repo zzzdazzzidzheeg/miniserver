@@ -20,7 +20,8 @@ public:
     Router();
 
     // Регистрация маршрута
-    void add_route(std::string method, std::string path, RouteAccess access, Handler handler);
+    void add_route(std::string method, std::string path, RouteAccess access, Handler handler,
+                   std::optional<RouteRateLimit> rate_limit = std::nullopt);
     void add_middleware(Middleware middleware);
     void set_not_found_handler(Handler handler);
     
@@ -33,6 +34,7 @@ private:
     struct Route {
         Handler handler;
         RouteAccess access;
+        std::optional<RouteRateLimit> rate_limit;
     };
 
     HttpResponse dispatch_request(HttpRequestContext& context, const Route* route,

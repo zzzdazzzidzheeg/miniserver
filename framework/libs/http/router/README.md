@@ -44,7 +44,7 @@ public:
 
 ### Основные методы
 
-#### `add_route(method, path, access, handler)`
+#### `add_route(method, path, access, handler, rate_limit)`
 
 Добавляет маршрут в словарь. Политика доступа обязательна: `Public` пропускает middleware аутентификации, а `Authenticated` требует principal. Ключ маршрута формируется по схеме:
 
@@ -57,6 +57,8 @@ public:
 ```cpp
 router.add_route("GET", "/api/status", RouteAccess::Public, handler);
 ```
+
+Последний аргумент необязателен. `RouteRateLimit` задаёт число запросов и окно для этого маршрута; например, `RouteRateLimit{5, std::chrono::seconds{60}}` ограничивает маршрут пятью запросами за минуту для каждого пользователя (или IP согласно настройке rate-limit middleware). Если аргумент не указан, применяется глобальная политика rate limit из конфигурации, когда она включена.
 
 #### `route(req)`
 

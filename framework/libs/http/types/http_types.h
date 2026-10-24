@@ -3,6 +3,8 @@
 #include <boost/beast/http.hpp>
 
 #include <functional>
+#include <chrono>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,10 +24,16 @@ enum class RouteAccess {
     Authenticated
 };
 
+struct RouteRateLimit {
+    std::size_t requests;
+    std::chrono::seconds window;
+};
+
 struct RouteMetadata {
     std::string method;
     std::string path;
     RouteAccess access = RouteAccess::Public;
+    std::optional<RouteRateLimit> rate_limit;
 };
 
 struct Principal {

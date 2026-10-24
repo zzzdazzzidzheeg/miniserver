@@ -24,7 +24,9 @@ public:
     const std::string& config_path() const noexcept;
     const ApplicationConfig& config() const noexcept;
 
-    void add_route(std::string method, std::string path, RouteAccess access, Router::Handler handler);
+    void add_route(std::string method, std::string path, RouteAccess access,
+                   Router::Handler handler,
+                   std::optional<RouteRateLimit> rate_limit = std::nullopt);
     void add_middleware(Middleware middleware);
     void add_authenticator(std::string provider, auth::Authenticator authenticator);
     void set_not_found_handler(Router::Handler handler);

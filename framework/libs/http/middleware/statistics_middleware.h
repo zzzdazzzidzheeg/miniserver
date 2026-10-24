@@ -43,6 +43,7 @@ struct RateLimitConfig {
     std::chrono::seconds window{60};
     std::size_t max_tracked_clients = 10000;
     bool group_by_principal = true;
+    bool enabled = true;
 };
 
 Middleware make_request_statistics_middleware(std::shared_ptr<RequestStatistics> statistics);

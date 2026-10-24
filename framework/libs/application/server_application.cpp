@@ -85,9 +85,10 @@ const ApplicationConfig& ServerApplication::config() const noexcept {
 }
 
 void ServerApplication::add_route(
-    std::string method, std::string path, RouteAccess access, Router::Handler handler) {
+    std::string method, std::string path, RouteAccess access, Router::Handler handler,
+    std::optional<RouteRateLimit> rate_limit) {
     configuration_locked_ = true;
-    router_.add_route(std::move(method), std::move(path), access, std::move(handler));
+    router_.add_route(std::move(method), std::move(path), access, std::move(handler), rate_limit);
 }
 
 void ServerApplication::add_middleware(Middleware middleware) {
@@ -149,12 +150,13 @@ void ServerApplication::initialize() {
             provider->second, config_.authentication.challenge));
     }
 
-    if (config_.middleware.rate_limit_enabled) {
+    {
         router_.add_middleware(make_rate_limit_middleware(request_statistics_, RateLimitConfig{
             config_.middleware.rate_limit_requests,
             std::chrono::seconds(config_.middleware.rate_limit_window_seconds),
             config_.middleware.rate_limit_max_tracked_clients,
-            config_.middleware.rate_limit_by_principal
+            config_.middleware.rate_limit_by_principal,
+            config_.middleware.rate_limit_enabled
         }));
     }
 

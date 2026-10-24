@@ -44,10 +44,14 @@ Router::Router() {
     };
 }
 
-void Router::add_route(std::string method, std::string path, RouteAccess access, Handler handler) {
+void Router::add_route(std::string method, std::string path, RouteAccess access, Handler handler,
+                       std::optional<RouteRateLimit> rate_limit) {
     if (!handler) throw std::invalid_argument("Route handler cannot be empty");
+    if (rate_limit && (rate_limit->requests == 0 || rate_limit->window.count() <= 0)) {
+        throw std::invalid_argument("Route rate limit values must be positive");
+    }
     std::string key = normalize_method(std::move(method)) + " " + std::move(path);
-    routes_[std::move(key)] = Route{std::move(handler), access};
+    routes_[std::move(key)] = Route{std::move(handler), access, rate_limit};
 }
 
 void Router::add_middleware(Middleware middleware) {
@@ -72,7 +76,8 @@ HttpResponse Router::route(const http::request<http::string_body>& req,
         const auto route = routes_.find(key);
         if (route != routes_.end()) {
             matched_route = &route->second;
-            route_metadata = RouteMetadata{method, path, route->second.access};
+            route_metadata = RouteMetadata{method, path, route->second.access,
+                route->second.rate_limit};
         }
     }
     const bool authentication_required = matched_route &&
