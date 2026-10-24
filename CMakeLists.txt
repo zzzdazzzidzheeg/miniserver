@@ -3,7 +3,7 @@ project(miniserver VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
 
-add_subdirectory(framework)
+add_subdirectory(miniserver)
 add_subdirectory(src)
 
 if(BUILD_TESTING)
