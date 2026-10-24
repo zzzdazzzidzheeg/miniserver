@@ -120,6 +120,8 @@ cd build
 - `middleware.rate_limit.requests` и `window_seconds`: число запросов от одного ключа за временное окно;
 - `middleware.rate_limit.max_tracked_clients`: ограничение числа IP/пользовательских ключей в памяти лимитера;
 - `database.file`: файл SQLite; каталог создаётся автоматически;
+- `database.users.require_email`: требует email при создании учётной записи;
+- `registration.auto_activate`: автоматически активирует аккаунты встроенного SQLite registration handler; по умолчанию `true`;
 - `authentication.provider`: `none` или `bearer` в текущей сборке примера;
 - `authentication.access_token_lifetime_seconds`: срок жизни bearer-токена.
 
@@ -208,7 +210,7 @@ app.add_route("GET", "/api/users/me", RouteAccess::Authenticated,
 | `POST` | `/api/auth/logout` | Отзыв предъявленного токена |
 | `DELETE` | `/api/auth/me` | Удаление текущего аккаунта и его токенов |
 
-Auth-маршруты доступны только при включённом bearer-провайдере. В демонстрационной реализации новые аккаунты активируются сразу. Подтверждение регистрации по email, телефону или другим способом приложение должно реализовать самостоятельно через собственный registration callback.
+Auth-маршруты доступны только при включённом bearer-провайдере. В демонстрационной реализации новые аккаунты активируются сразу по умолчанию. При `registration.auto_activate: false` запись создаётся неактивной и регистрация отвечает `202`; приложение должно реализовать свой процесс активации через callback и `users.set_active()`. Это не привязано к email: `database.users.require_email` лишь определяет, обязателен ли адрес при регистрации.
 
 Пример API-запроса:
 

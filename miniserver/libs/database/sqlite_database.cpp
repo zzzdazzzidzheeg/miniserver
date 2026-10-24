@@ -116,8 +116,24 @@ void UsersRepository::initialize() {
         "username TEXT NOT NULL UNIQUE, "
         "email TEXT, "
         "password_hash TEXT NOT NULL, "
-        "confirmed INTEGER NOT NULL DEFAULT 0 CHECK (confirmed IN (0, 1))"
+        "is_active INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1))"
         ")");
+    const auto columns = database_->query("PRAGMA table_info(users)");
+    bool has_active_column = false;
+    bool has_legacy_confirmed_column = false;
+    for (const auto& column : columns) {
+        const auto& name = std::get<std::string>(column.at("name"));
+        has_active_column = has_active_column || name == "is_active";
+        has_legacy_confirmed_column = has_legacy_confirmed_column || name == "confirmed";
+    }
+    if (!has_active_column) {
+        database_->execute(
+            "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0 "
+            "CHECK (is_active IN (0, 1))");
+        if (has_legacy_confirmed_column) {
+            database_->execute("UPDATE users SET is_active = confirmed");
+        }
+    }
     database_->execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique "
         "ON users(email) WHERE email IS NOT NULL AND email <> ''");
@@ -140,11 +156,11 @@ std::int64_t UsersRepository::add(const NewUser& user) {
         user.username,
         user.email ? Value{*user.email} : Value{nullptr},
         user.password_hash,
-        std::int64_t{user.confirmed ? 1 : 0}
+        std::int64_t{user.is_active ? 1 : 0}
     };
     std::lock_guard<std::mutex> lock(database_->connection_mutex_);
     sqlite3_stmt* statement = prepare(database_->connection_,
-        "INSERT INTO users (username, email, password_hash, confirmed) VALUES (?, ?, ?, ?)",
+        "INSERT INTO users (username, email, password_hash, is_active) VALUES (?, ?, ?, ?)",
         parameters);
     const int result = sqlite3_step(statement);
     if (result != SQLITE_DONE) {
@@ -176,12 +192,12 @@ std::optional<UserRecord> find_user(SQLiteDatabase& database, std::string_view s
             ? std::optional<std::string>{}
             : std::optional<std::string>{std::get<std::string>(email)},
         std::get<std::string>(row.at("password_hash")),
-        std::get<std::int64_t>(row.at("confirmed")) != 0
+        std::get<std::int64_t>(row.at("is_active")) != 0
     };
 }
 
 constexpr std::string_view user_columns =
-    "SELECT id, username, email, password_hash, confirmed FROM users WHERE ";
+    "SELECT id, username, email, password_hash, is_active FROM users WHERE ";
 
 } // namespace
 
@@ -197,9 +213,9 @@ std::optional<UserRecord> UsersRepository::find_by_email(std::string_view email)
     return find_user(*database_, std::string(user_columns) + "email = ?", {std::string(email)});
 }
 
-bool UsersRepository::set_confirmed(std::int64_t id, bool confirmed) {
-    return database_->execute("UPDATE users SET confirmed = ? WHERE id = ?",
-        {std::int64_t{confirmed ? 1 : 0}, id}) > 0;
+bool UsersRepository::set_active(std::int64_t id, bool is_active) {
+    return database_->execute("UPDATE users SET is_active = ? WHERE id = ?",
+        {std::int64_t{is_active ? 1 : 0}, id}) > 0;
 }
 
 SQLiteDatabase::SQLiteDatabase(const std::string& file_path, bool user_email_required)

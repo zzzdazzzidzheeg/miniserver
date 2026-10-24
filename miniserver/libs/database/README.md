@@ -14,14 +14,14 @@ const database::NewUser new_user{
 const auto user_id = db.users.add(new_user);
 
 const auto user = db.users.find_by_username("alice");
-if (user && user->confirmed) {
+if (user && user->is_active) {
     // Authenticate using the stored password hash.
 }
 
-db.users.set_confirmed(user_id, true);
+db.users.set_active(user_id, true);
 ```
 
-`NewUser` accepts a username, optional email, password hash, and confirmation state. `add()` returns the generated integer ID and fails on duplicate usernames or non-empty emails. `find_by_id()`, `find_by_username()`, and `find_by_email()` return `std::optional<UserRecord>`; `set_confirmed()` returns false if the ID does not exist. Lookup text is matched exactly, so applications should normalize usernames/emails consistently before storing and querying them.
+`NewUser` accepts a username, optional email, password hash, and `is_active` state. Users are inactive by default. `add()` returns the generated integer ID and fails on duplicate usernames or non-empty emails. `find_by_id()`, `find_by_username()`, and `find_by_email()` return `std::optional<UserRecord>`; `set_active()` returns false if the ID does not exist. Activation is a generic account state and is not tied to email confirmation. Existing databases with the old `confirmed` column are migrated to `is_active` on open, preserving their current values. Lookup text is matched exactly, so applications should normalize usernames/emails consistently before storing and querying them.
 
 Email can be required for repository inserts through `database.users.require_email` in `config/server.jsonc`. The setting defaults to `false`; when enabled, `db.users.add()` throws `std::invalid_argument` if no email is supplied. The example configuration enables it.
 

@@ -23,7 +23,7 @@ struct NewUser {
     // Store a password hash produced by an application-selected password
     // hashing function. Never pass a raw password here.
     std::string password_hash;
-    bool confirmed = false;
+    bool is_active = false;
 };
 
 struct UserRecord {
@@ -31,7 +31,7 @@ struct UserRecord {
     std::string username;
     std::optional<std::string> email;
     std::string password_hash;
-    bool confirmed;
+    bool is_active;
 };
 
 class DuplicateUserError : public std::runtime_error {
@@ -45,7 +45,7 @@ public:
     std::optional<UserRecord> find_by_id(std::int64_t id) const;
     std::optional<UserRecord> find_by_username(std::string_view username) const;
     std::optional<UserRecord> find_by_email(std::string_view email) const;
-    bool set_confirmed(std::int64_t id, bool confirmed);
+    bool set_active(std::int64_t id, bool is_active);
 
 private:
     friend class SQLiteDatabase;

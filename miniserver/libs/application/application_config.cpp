@@ -163,6 +163,18 @@ ApplicationConfig load_application_config(const std::string& path) {
         }
     }
 
+    if (const auto registration = root.find("registration"); registration != root.end()) {
+        if (!registration->is_object()) {
+            throw std::runtime_error("Config section 'registration' must be an object");
+        }
+        if (registration->contains("auto_activate")) {
+            if (!registration->at("auto_activate").is_boolean()) {
+                throw std::runtime_error("Config field 'registration.auto_activate' must be boolean");
+            }
+            config.registration.auto_activate = registration->at("auto_activate").get<bool>();
+        }
+    }
+
     if (const auto authentication = root.find("authentication"); authentication != root.end()) {
         if (!authentication->is_object()) {
             throw std::runtime_error("Config section 'authentication' must be an object");
@@ -283,6 +295,12 @@ void write_default_application_config(const std::string& path) {
   "database": {
     "file": "../data/miniserver.sqlite3",
     "users": { "require_email": false }
+  },
+
+  // Automatically activate accounts created by the sample SQLite registration service.
+  // Set false when the application will activate users through its own workflow.
+  "registration": {
+    "auto_activate": true
   },
 
   // Select "none" or a registered authentication provider such as "bearer".

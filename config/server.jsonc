@@ -50,6 +50,10 @@
       "require_email": true
     }
   },
+  // Automatically activate accounts created by the sample registration handler.
+  "registration": {
+    "auto_activate": true
+  },
   // "none" disables authentication; "bearer" enables the example bearer provider.
   "authentication": {
     "provider": "bearer",

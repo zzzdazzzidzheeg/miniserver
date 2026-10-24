@@ -14,7 +14,8 @@ namespace auth {
 class SQLiteAccountService {
 public:
     explicit SQLiteAccountService(database::SQLiteDatabase& database,
-        std::chrono::seconds access_token_lifetime = std::chrono::hours(1));
+        std::chrono::seconds access_token_lifetime = std::chrono::hours(1),
+        bool auto_activate = true);
 
     std::optional<IssuedAccessToken> login(
         std::string_view username, std::string_view password);
@@ -26,6 +27,7 @@ public:
 private:
     database::SQLiteDatabase& database_;
     std::int64_t access_token_lifetime_seconds_;
+    bool auto_activate_;
 };
 
 } // namespace auth

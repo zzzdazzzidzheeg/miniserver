@@ -110,7 +110,7 @@ inline void register_routes(ServerApplication& app) {
 
     if (authentication_provider == "bearer") {
         auto accounts = std::make_shared<auth::SQLiteAccountService>(
-            app.database(), access_token_lifetime);
+            app.database(), access_token_lifetime, config.registration.auto_activate);
         app.add_authenticator("bearer", auth::make_bearer_authenticator(
             [accounts](std::string_view token) { return accounts->authenticate(token); }));
         app.add_route("POST", "/api/auth/login", RouteAccess::Public,

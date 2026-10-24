@@ -123,8 +123,9 @@ constexpr std::string_view dummy_password_hash =
 } // namespace
 
 SQLiteAccountService::SQLiteAccountService(database::SQLiteDatabase& database,
-        std::chrono::seconds access_token_lifetime)
-    : database_(database), access_token_lifetime_seconds_(access_token_lifetime.count()) {
+        std::chrono::seconds access_token_lifetime, bool auto_activate)
+    : database_(database), access_token_lifetime_seconds_(access_token_lifetime.count()),
+      auto_activate_(auto_activate) {
     if (access_token_lifetime_seconds_ <= 0 ||
         access_token_lifetime_seconds_ > max_token_lifetime_seconds) {
         throw std::invalid_argument("Access token lifetime must be between 1 second and 30 days");
@@ -152,7 +153,7 @@ std::optional<IssuedAccessToken> SQLiteAccountService::login(
     const auto user = database_.users.find_by_username(username);
     const bool password_valid = verify_password(password,
         user ? std::string_view(user->password_hash) : dummy_password_hash);
-    if (!user || !user->confirmed || !password_valid) return std::nullopt;
+    if (!user || !user->is_active || !password_valid) return std::nullopt;
 
     const std::string token = create_access_token();
     const std::int64_t expires_at = unix_time_seconds() + access_token_lifetime_seconds_;
@@ -184,14 +185,15 @@ RegistrationOutcome SQLiteAccountService::register_account(const nlohmann::json&
 
     try {
         database_.users.add(database::NewUser{
-            username, std::move(email), hash_password(password), true
+            username, std::move(email), hash_password(password), auto_activate_
         });
     } catch (const database::DuplicateUserError&) {
         return RegistrationOutcome::Rejected;
     } catch (const std::invalid_argument&) {
         return RegistrationOutcome::Rejected;
     }
-    return RegistrationOutcome::Created;
+    return auto_activate_ ? RegistrationOutcome::Created
+                          : RegistrationOutcome::ConfirmationRequired;
 }
 
 std::optional<Principal> SQLiteAccountService::authenticate(std::string_view bearer_token) {
@@ -204,7 +206,7 @@ std::optional<Principal> SQLiteAccountService::authenticate(std::string_view bea
         "SELECT users.id FROM access_tokens "
         "JOIN users ON users.id = access_tokens.user_id "
         "WHERE access_tokens.token_hash = ? AND access_tokens.expires_at > ? "
-        "AND users.confirmed = 1",
+        "AND users.is_active = 1",
         {sha256_hex(bearer_token), unix_time_seconds()});
     if (rows.empty()) return std::nullopt;
     return Principal{std::to_string(std::get<std::int64_t>(rows.front().at("id")))};

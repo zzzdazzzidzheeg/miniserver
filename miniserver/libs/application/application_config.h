@@ -25,6 +25,10 @@ struct DatabaseConfig {
     bool require_user_email = false;
 };
 
+struct RegistrationConfig {
+    bool auto_activate = true;
+};
+
 struct AuthenticationConfig {
     // "none" disables authentication middleware; other names select a
     // registered provider, such as "bearer".
@@ -44,6 +48,7 @@ struct ApplicationConfig {
     LoggingConfig logging;
     MiddlewareConfig middleware;
     DatabaseConfig database;
+    RegistrationConfig registration;
     AuthenticationConfig authentication;
     ApplicationMode mode = ApplicationMode::ApiOnly;
     std::string web_root = "../static";
