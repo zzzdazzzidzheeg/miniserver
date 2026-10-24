@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "server_application.h"
@@ -46,6 +47,21 @@ struct EchoHandler {
             return http_utils::make_error_response(
                 400, "Invalid JSON payload: " + std::string(error.what()), request.version());
         }
+    }
+};
+
+// Demonstrates deferred work without blocking the server's I/O worker.
+// This is for local testing only; production handlers should use an async
+// client or a bounded worker pool instead of creating a thread per request.
+struct AsyncDemoHandler {
+    void operator()(const std::shared_ptr<HttpRequestContext>& context,
+                    ResponseCompletion complete) const {
+        std::thread([context, complete = std::move(complete)]() mutable {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            complete(http_utils::make_json_response(200,
+                {{"status", "completed"}, {"delay_seconds", 2}},
+                context->request.version()));
+        }).detach();
     }
 };
 
@@ -136,6 +152,8 @@ inline void register_routes(ServerApplication& app) {
 
     app.add_route("GET", "/api/ping", RouteAccess::Public, PingHandler{});
     app.add_route("GET", "/api/echo", RouteAccess::Public, EchoHandler{});
+    app.add_async_route("GET", "/api/async-demo", RouteAccess::Public,
+        AsyncDemoHandler{});
     app.add_route("GET", "/api/info", RouteAccess::Public,
         InfoHandler{"1.0", authentication_provider == "bearer",
             registration_email_required});

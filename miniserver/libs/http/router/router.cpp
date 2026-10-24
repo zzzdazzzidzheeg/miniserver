@@ -51,12 +51,41 @@ void Router::add_route(std::string method, std::string path, RouteAccess access,
         throw std::invalid_argument("Route rate limit values must be positive");
     }
     std::string key = normalize_method(std::move(method)) + " " + std::move(path);
-    routes_[std::move(key)] = Route{std::move(handler), access, rate_limit};
+    routes_[std::move(key)] = Route{std::move(handler), {}, access, rate_limit};
+}
+
+void Router::add_async_route(std::string method, std::string path, RouteAccess access,
+                             AsyncRouteHandler handler,
+                             std::optional<RouteRateLimit> rate_limit) {
+    if (!handler) throw std::invalid_argument("Async route handler cannot be empty");
+    if (rate_limit && (rate_limit->requests == 0 || rate_limit->window.count() <= 0)) {
+        throw std::invalid_argument("Route rate limit values must be positive");
+    }
+    std::string key = normalize_method(std::move(method)) + " " + std::move(path);
+    routes_[std::move(key)] = Route{{}, std::move(handler), access, rate_limit};
 }
 
 void Router::add_middleware(Middleware middleware) {
     if (!middleware) throw std::invalid_argument("Middleware cannot be empty");
+    has_user_sync_middleware_ = true;
     middleware_.push_back(std::move(middleware));
+}
+
+void Router::add_builtin_middleware(Middleware middleware) {
+    if (!middleware) throw std::invalid_argument("Middleware cannot be empty");
+    middleware_.push_back(std::move(middleware));
+}
+
+void Router::add_async_middleware(AsyncMiddleware middleware) {
+    if (!middleware) throw std::invalid_argument("Async middleware cannot be empty");
+    async_middleware_.push_back(std::move(middleware));
+}
+
+bool Router::has_async_routes() const noexcept {
+    for (const auto& entry : routes_) {
+        if (entry.second.async_handler) return true;
+    }
+    return false;
 }
 
 void Router::set_not_found_handler(Handler handler) {
@@ -109,7 +138,107 @@ HttpResponse Router::route(const http::request<http::string_body>& req,
         };
     }
 
+    if (matched_route && matched_route->async_handler) {
+        return http_utils::make_error_response(
+            500, "Asynchronous route requires asynchronous dispatch", req.version());
+    }
     return next(context);
+}
+
+void Router::route_async(HttpRequest request, std::string client_address,
+                         ResponseCompletion completion) const {
+    if (!completion) return;
+    const ParsedUrl parsed_url = parse_url(request.target());
+    const Route* matched_route = nullptr;
+    std::optional<RouteMetadata> route_metadata;
+    if (parsed_url.valid) {
+        const std::string path = path_from_url(parsed_url);
+        const std::string method = normalize_method(std::string(request.method_string()));
+        const auto route = routes_.find(method + " " + path);
+        if (route != routes_.end()) {
+            matched_route = &route->second;
+            route_metadata = RouteMetadata{method, path, route->second.access,
+                route->second.rate_limit};
+        }
+    }
+
+    if (!matched_route || !matched_route->async_handler) {
+        completion(route(request, std::move(client_address)));
+        return;
+    }
+    if (has_user_sync_middleware_) {
+        log_error("Router", "Async route cannot run with synchronous custom middleware; use add_async_middleware");
+        completion(http_utils::make_error_response(
+            500, "Async route middleware configuration error", request.version()));
+        return;
+    }
+
+    const bool authentication_required = matched_route->access == RouteAccess::Authenticated;
+    auto owned_request = std::make_shared<HttpRequest>(std::move(request));
+    auto context = std::make_shared<HttpRequestContext>(std::move(owned_request),
+        authentication_required, std::move(client_address), std::move(route_metadata));
+
+    AsyncMiddlewareNext next = [this, matched_route, valid_target = parsed_url.valid,
+        target_error = parsed_url.error](const auto& request_context, ResponseCompletion done) {
+        dispatch_async(request_context, matched_route, valid_target, target_error,
+            std::move(done));
+    };
+    for (auto it = async_middleware_.rbegin(); it != async_middleware_.rend(); ++it) {
+        AsyncMiddleware current = *it;
+        AsyncMiddlewareNext downstream = std::move(next);
+        next = [current = std::move(current), downstream = std::move(downstream)](
+                const auto& request_context, ResponseCompletion done) {
+            try {
+                current(request_context, downstream, done);
+            } catch (const std::exception& error) {
+                log_error("Router", "Async middleware exception: " + std::string(error.what()));
+                done(http_utils::make_error_response(500, "Internal server error",
+                    request_context->request.version()));
+            } catch (...) {
+                log_error("Router", "Unknown async middleware exception");
+                done(http_utils::make_error_response(500, "Internal server error",
+                    request_context->request.version()));
+            }
+        };
+    }
+    next(context, std::move(completion));
+}
+
+void Router::dispatch_async(const std::shared_ptr<HttpRequestContext>& context,
+                            const Route* route, bool valid_target,
+                            const std::string& target_error,
+                            ResponseCompletion completion) const {
+    const auto& request = context->request;
+    if (!valid_target) {
+        completion(http_utils::make_error_response(
+            400, "Invalid request target: " + target_error, request.version()));
+        return;
+    }
+    if (route->access == RouteAccess::Authenticated && !context->principal) {
+        if (context->authentication_checked()) {
+            auto response = http_utils::make_error_response(
+                401, "Authentication required", request.version());
+            response.set(http::field::www_authenticate, context->authentication_challenge());
+            completion(std::move(response));
+        } else {
+            completion(http_utils::make_error_response(
+                500, "Internal server error", request.version()));
+        }
+        return;
+    }
+    try {
+        if (route->async_handler) {
+            route->async_handler(context, completion);
+        } else {
+            completion(route->handler(*context));
+        }
+    } catch (const std::exception& error) {
+        log_error("Router", "Async handler exception: " + std::string(error.what()));
+        completion(http_utils::make_error_response(500, "Internal server error", request.version()));
+    } catch (...) {
+        log_error("Router", "Unknown async handler exception");
+        completion(http_utils::make_error_response(500, "Internal server error", request.version()));
+    }
 }
 
 HttpResponse Router::dispatch_request(HttpRequestContext& context, const Route* route,

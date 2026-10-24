@@ -18,6 +18,7 @@ struct SessionConfig {
     std::chrono::seconds handshake_timeout{10};
     std::chrono::seconds read_timeout{15};
     std::chrono::seconds write_timeout{15};
+    std::chrono::seconds handler_timeout{30};
     std::chrono::seconds shutdown_timeout{10};
     std::size_t header_limit = 8192;
     std::uint64_t body_limit = 1024 * 1024;

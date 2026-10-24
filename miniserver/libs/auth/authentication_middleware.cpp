@@ -72,4 +72,20 @@ Middleware make_authentication_middleware(Authenticator authenticator, std::stri
     };
 }
 
+AsyncMiddleware make_async_authentication_middleware(Authenticator authenticator,
+        std::string challenge) {
+    if (!authenticator) throw std::invalid_argument("Authenticator cannot be empty");
+    if (challenge.empty() || challenge.find_first_of("\r\n") != std::string::npos) {
+        throw std::invalid_argument("WWW-Authenticate challenge must be non-empty and single-line");
+    }
+    return [authenticator = std::move(authenticator), challenge = std::move(challenge)](
+            const std::shared_ptr<HttpRequestContext>& context,
+            const AsyncMiddlewareNext& next, ResponseCompletion completion) {
+        auto principal = authenticator(context->request);
+        if (principal && principal->subject.empty()) principal.reset();
+        context->set_authentication_result(std::move(principal), challenge);
+        next(context, std::move(completion));
+    };
+}
+
 } // namespace auth

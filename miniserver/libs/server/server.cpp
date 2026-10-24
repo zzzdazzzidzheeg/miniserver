@@ -18,6 +18,14 @@ Server::Server(ServerConfig server_config, SessionConfig session_config,
 
 Server::Server(ServerConfig server_config, SessionConfig session_config,
             ContextRequestHandler request_handler)
+    : Server(std::move(server_config), std::move(session_config),
+        AsyncContextRequestHandler([handler = std::move(request_handler)](
+                HttpRequest request, std::string client_address, ResponseCompletion completion) {
+            completion(handler(request, client_address));
+        })) {}
+
+Server::Server(ServerConfig server_config, SessionConfig session_config,
+            AsyncContextRequestHandler request_handler)
             : server_config_(std::move(server_config)),
               session_config_(std::move(session_config)),
               io_context_(boost::asio::io_context()),

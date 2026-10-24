@@ -4,7 +4,7 @@
 #include <string_view>
 
 Session::Session(asio::ssl::stream<asio::ip::tcp::socket> socket,
-    ContextRequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
+    AsyncContextRequestHandler request_handler, SessionConfig config, std::function<void()> on_close)
     : socket_(std::move(socket)),
     deadline_(socket_.get_executor()),
     request_handler_(std::move(request_handler)),
@@ -23,6 +23,7 @@ void Session::arm_deadline(std::chrono::seconds timeout) {
     deadline_.async_wait([self = shared_from_this()](beast::error_code ec) {
         if (!ec) {
             log_warning("Session", "Connection deadline exceeded");
+            self->closed_ = true;
             beast::error_code close_ec;
             self->socket_.lowest_layer().cancel(close_ec);
             self->socket_.lowest_layer().close(close_ec);
@@ -88,6 +89,7 @@ void Session::do_read() {
 }
 
 void Session::handle_request() {
+    const unsigned request_version = parser_.get().version();
 try {
         // 1. Логируем, что запрос получен (помогает при отладке)
         const auto target = parser_.get().target();
@@ -98,17 +100,31 @@ try {
 
         // 2. Создаем объект ответа с типом тела string_body
         auto request = parser_.release();
-
-        auto response = request_handler_(request, client_address_);
-        const auto status = std::visit([](const auto& message) { return message.result_int(); }, response);
-        log_info("Session", "Sending HTTP response " + std::to_string(status));
-        send_response(std::move(response));
+        auto completed = std::make_shared<std::atomic<bool>>(false);
+        std::weak_ptr<Session> weak_self = shared_from_this();
+        arm_deadline(config_.handler_timeout);
+        request_handler_(std::move(request), client_address_,
+            [weak_self, completed](HttpResponse response) mutable {
+                if (completed->exchange(true, std::memory_order_relaxed)) return;
+                if (auto self = weak_self.lock()) {
+                    asio::dispatch(self->socket_.get_executor(),
+                        [self, response = std::move(response)]() mutable {
+                            self->cancel_deadline();
+                            if (self->closed_) return;
+                            const auto status = std::visit(
+                                [](const auto& message) { return message.result_int(); }, response);
+                            log_info("Session", "Sending HTTP response " + std::to_string(status));
+                            self->send_response(std::move(response));
+                        });
+                }
+            });
         // 3. Устанавливаем статус 200 OK и версию HTTP из запроса
     }
     catch (const std::exception& e) {
         log_error("Session", "Request handling exception: " + std::string(e.what()));
         // Фолбэк ответ генерируем прямо здесь, так как это уровень сети
-        HttpStringResponse err_res{http::status::internal_server_error, parser_.get().version()};
+        cancel_deadline();
+        HttpStringResponse err_res{http::status::internal_server_error, request_version};
         err_res.body() = "Internal Server Error";
         err_res.prepare_payload();
         send_response(std::move(err_res));

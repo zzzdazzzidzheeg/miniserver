@@ -3,6 +3,7 @@
 #include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <string>
 #include "server_config.h"
@@ -15,7 +16,7 @@ namespace ssl = asio::ssl;
 class Session : public std::enable_shared_from_this<Session> {
 public:
     explicit Session(asio::ssl::stream<asio::ip::tcp::socket> socket,
-        ContextRequestHandler request_handler, SessionConfig config, std::function<void()> on_close);
+        AsyncContextRequestHandler request_handler, SessionConfig config, std::function<void()> on_close);
     ~Session();
     void start();
     void force_close();
@@ -31,7 +32,7 @@ private:
     asio::steady_timer deadline_;
     beast::flat_buffer buffer_;
 	http::request_parser<http::string_body> parser_;
-	ContextRequestHandler request_handler_;
+    AsyncContextRequestHandler request_handler_;
     SessionConfig config_;
     std::string client_address_;
     std::function<void()> on_close_;

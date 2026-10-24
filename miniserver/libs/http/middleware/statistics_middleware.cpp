@@ -137,3 +137,110 @@ Middleware make_rate_limit_middleware(std::shared_ptr<RequestStatistics> statist
         return next(context);
     };
 }
+
+AsyncMiddleware make_async_request_statistics_middleware(
+        std::shared_ptr<RequestStatistics> statistics) {
+    if (!statistics) throw std::invalid_argument("Request statistics cannot be null");
+    return [statistics = std::move(statistics)](
+            const std::shared_ptr<HttpRequestContext>& context,
+            const AsyncMiddlewareNext& next, ResponseCompletion completion) {
+        statistics->total_requests_.fetch_add(1, std::memory_order_relaxed);
+        statistics->active_requests_.fetch_add(1, std::memory_order_relaxed);
+        auto completed = std::make_shared<std::atomic<bool>>(false);
+        auto final_completion = std::make_shared<ResponseCompletion>(std::move(completion));
+        auto finish = [statistics, completed, final_completion](HttpResponse response) mutable {
+            if (completed->exchange(true, std::memory_order_relaxed)) return;
+            const unsigned status = std::visit(
+                [](const auto& message) { return message.result_int(); }, response);
+            if (status >= 200 && status < 300) {
+                statistics->responses_2xx_.fetch_add(1, std::memory_order_relaxed);
+            } else if (status >= 300 && status < 400) {
+                statistics->responses_3xx_.fetch_add(1, std::memory_order_relaxed);
+            } else if (status >= 400 && status < 500) {
+                statistics->responses_4xx_.fetch_add(1, std::memory_order_relaxed);
+            } else if (status >= 500 && status < 600) {
+                statistics->responses_5xx_.fetch_add(1, std::memory_order_relaxed);
+            }
+            statistics->active_requests_.fetch_sub(1, std::memory_order_relaxed);
+            (*final_completion)(std::move(response));
+        };
+        try {
+            next(context, finish);
+        } catch (...) {
+            if (!completed->exchange(true, std::memory_order_relaxed)) {
+                statistics->active_requests_.fetch_sub(1, std::memory_order_relaxed);
+                statistics->responses_5xx_.fetch_add(1, std::memory_order_relaxed);
+                HttpStringResponse response{http::status::internal_server_error,
+                    context->request.version()};
+                response.set(http::field::content_type, "application/json");
+                response.body() = R"({"error":"Internal server error"})";
+                response.prepare_payload();
+                (*final_completion)(std::move(response));
+            }
+        }
+    };
+}
+
+AsyncMiddleware make_async_rate_limit_middleware(std::shared_ptr<RequestStatistics> statistics,
+        RateLimitConfig config) {
+    if (!statistics) throw std::invalid_argument("Request statistics cannot be null");
+    if (config.max_tracked_clients == 0 ||
+        (config.enabled && (config.requests == 0 || config.window.count() <= 0))) {
+        throw std::invalid_argument("Enabled rate limit values must be positive");
+    }
+    auto clients = std::make_shared<std::unordered_map<std::string, ClientWindow>>();
+    auto clients_mutex = std::make_shared<std::mutex>();
+    auto calls = std::make_shared<std::uint64_t>(0);
+
+    return [statistics = std::move(statistics), config, clients = std::move(clients),
+            clients_mutex = std::move(clients_mutex), calls = std::move(calls)](
+            const std::shared_ptr<HttpRequestContext>& context,
+            const AsyncMiddlewareNext& next, ResponseCompletion completion) {
+        const auto& route = context->matched_route;
+        const bool has_route_limit = route && route->rate_limit.has_value();
+        if (!has_route_limit && !config.enabled) {
+            next(context, std::move(completion));
+            return;
+        }
+        const std::size_t request_limit = has_route_limit
+            ? route->rate_limit->requests : config.requests;
+        const auto window = has_route_limit ? route->rate_limit->window : config.window;
+        const auto now = std::chrono::steady_clock::now();
+        std::string key = config.group_by_principal && context->principal
+            ? "principal:" + context->principal->subject
+            : "ip:" + context->client_address;
+        if (route) key += "|route:" + route->method + " " + route->path;
+        else key += "|route:<unmatched>";
+
+        bool allowed = false;
+        {
+            std::lock_guard<std::mutex> lock(*clients_mutex);
+            auto client = clients->find(key);
+            if (client != clients->end() && now - client->second.started >= client->second.window) {
+                client->second = ClientWindow{now, 0, window};
+            }
+            if (client == clients->end()) {
+                if (clients->size() >= config.max_tracked_clients &&
+                    (++*calls % 256) == 0) {
+                    for (auto it = clients->begin(); it != clients->end();) {
+                        if (now - it->second.started >= it->second.window) it = clients->erase(it);
+                        else ++it;
+                    }
+                }
+                if (clients->size() < config.max_tracked_clients) {
+                    client = clients->emplace(key, ClientWindow{now, 0, window}).first;
+                }
+            }
+            if (client != clients->end() && client->second.requests < request_limit) {
+                ++client->second.requests;
+                allowed = true;
+            }
+        }
+        if (!allowed) {
+            statistics->rate_limited_requests_.fetch_add(1, std::memory_order_relaxed);
+            completion(too_many_requests(context->request.version(), window));
+            return;
+        }
+        next(context, std::move(completion));
+    };
+}

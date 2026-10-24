@@ -11,13 +11,14 @@
     "certificate_file": "../certs/cert.pem",
     "private_key_file": "../certs/key.pem",
     "max_connections": 1024,
-    "worker_threads": 4
+    "worker_threads": 1
   },
   // Time limits for TLS and HTTP operations, plus request header/body size limits.
   "session": {
     "handshake_timeout_seconds": 10,
     "read_timeout_seconds": 15,
     "write_timeout_seconds": 15,
+    "handler_timeout_seconds": 30,
     "shutdown_timeout_seconds": 10,
     "header_limit_bytes": 8192,
     "body_limit_bytes": 1048576

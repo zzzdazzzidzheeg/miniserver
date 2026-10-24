@@ -5,6 +5,7 @@
 #include <functional>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,11 +42,23 @@ struct Principal {
 };
 
 struct HttpRequestContext {
+private:
+    std::shared_ptr<HttpRequest> owned_request_;
+
+public:
     explicit HttpRequestContext(const HttpRequest& http_request, bool requires_authentication = false,
                                 std::string client_address = {},
                                 std::optional<RouteMetadata> matched_route = std::nullopt)
         : request(http_request), client_address(std::move(client_address)),
           matched_route(std::move(matched_route)),
+          authentication_required_(requires_authentication) {}
+
+    explicit HttpRequestContext(std::shared_ptr<HttpRequest> http_request,
+                                bool requires_authentication = false,
+                                std::string client_address = {},
+                                std::optional<RouteMetadata> matched_route = std::nullopt)
+        : owned_request_(std::move(http_request)), request(*owned_request_),
+          client_address(std::move(client_address)), matched_route(std::move(matched_route)),
           authentication_required_(requires_authentication) {}
 
     bool requires_authentication() const noexcept {
@@ -82,3 +95,8 @@ private:
 using RequestHandler = std::function<HttpResponse(const HttpRequest&)>;
 using ContextRequestHandler = std::function<HttpResponse(const HttpRequest&, std::string_view client_address)>;
 using RouteHandler = std::function<HttpResponse(HttpRequestContext&)>;
+using ResponseCompletion = std::function<void(HttpResponse)>;
+using AsyncRouteHandler = std::function<void(
+    const std::shared_ptr<HttpRequestContext>&, ResponseCompletion)>;
+using AsyncContextRequestHandler = std::function<void(
+    HttpRequest, std::string, ResponseCompletion)>;

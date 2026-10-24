@@ -18,5 +18,7 @@ Authenticator make_bearer_authenticator(BearerTokenValidator validator);
 // The authenticator is application-provided. challenge is the matching
 // WWW-Authenticate value for the selected credential scheme.
 Middleware make_authentication_middleware(Authenticator authenticator, std::string challenge);
+AsyncMiddleware make_async_authentication_middleware(Authenticator authenticator,
+    std::string challenge);
 
 } // namespace auth

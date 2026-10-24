@@ -128,8 +128,7 @@ void UsersRepository::initialize() {
     }
     if (!has_active_column) {
         database_->execute(
-            "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0 "
-            "CHECK (is_active IN (0, 1))");
+            "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0");
         if (has_legacy_confirmed_column) {
             database_->execute("UPDATE users SET is_active = confirmed");
         }
@@ -263,7 +262,8 @@ int SQLiteDatabase::execute(std::string_view sql, const Parameters& parameters) 
     sqlite3_stmt* statement = prepare(connection_, sql, parameters);
     if (sqlite3_column_count(statement) != 0) {
         sqlite3_finalize(statement);
-        throw std::invalid_argument("Statement returns rows; use query() instead");
+        throw std::invalid_argument("Statement returns rows; use query() instead: " +
+            std::string(sql));
     }
     int result = SQLITE_OK;
     do {

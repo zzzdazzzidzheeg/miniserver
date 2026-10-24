@@ -60,6 +60,24 @@ int main(int argc, char* argv[]) {
 
 Если путь конфигурации не передан, приложение ищет её рядом с исполняемым файлом. Можно передать путь конструктору, как в примере, либо вызвать `app.set_config_path(path)` до настройки приложения. Конфигурация доступна через `app.config()`; `app.database()` даёт доступ к настроенному SQLite-компоненту.
 
+Для операции, завершающейся позже, используйте `add_async_route()`. `client` здесь — предоставленный приложением асинхронный клиент:
+
+```cpp
+app.add_async_route("GET", "/api/remote", RouteAccess::Public,
+    [&client](const std::shared_ptr<HttpRequestContext>& context,
+              ResponseCompletion complete) {
+        client.async_get("/data", [context, complete = std::move(complete)](auto result) mutable {
+            if (!result) {
+                complete(http_utils::make_error_response(
+                    502, "Remote service unavailable", context->request.version()));
+                return;
+            }
+            complete(http_utils::make_json_response(200,
+                {{"data", *result}}, context->request.version()));
+        });
+    });
+```
+
 ## Маршруты и обработчики
 
 `add_route(method, path, access, handler, rate_limit)` связывает HTTP-метод и путь с обработчиком. Политика доступа обязательна:
@@ -113,6 +131,8 @@ Framework не навязывает хранилище учётных запис
 Приложение может добавлять собственные middleware через `app.add_middleware()` до `initialize()`. Middleware вызываются после того, как router выбрал маршрут, поэтому они могут читать `context.matched_route`, `context.principal` и данные запроса, затем продолжать цепочку или вернуть ответ.
 
 Встроенная статистика доступна через `app.request_statistics()`. Она считает запросы, активные запросы, классы HTTP-ответов и отклонения rate limiter. Rate limiter включается настройкой `middleware.rate_limit.enabled`; маршрутные лимиты можно задать через `RouteRateLimit`.
+
+Асинхронный обработчик регистрируется через `add_async_route()`. Он получает `std::shared_ptr<HttpRequestContext>` и `ResponseCompletion`; сохраните копию контекста, если используете его после возврата из обработчика, и вызовите completion ровно один раз. Контекст владеет запросом и остаётся доступен до завершения. Синхронные маршруты продолжают регистрироваться через `add_route()`. Пользовательские middleware для async-маршрутов нужно регистрировать через `add_async_middleware()`; нельзя одновременно использовать пользовательское синхронное middleware и async-маршруты в одном приложении. `session.handler_timeout_seconds` ограничивает ожидание ответа от async-обработчика.
 
 ## Компоненты
 

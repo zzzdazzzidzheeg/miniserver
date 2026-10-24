@@ -83,6 +83,7 @@ ApplicationConfig load_application_config(const std::string& path) {
     config.session.handshake_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "handshake_timeout_seconds", config.session.handshake_timeout.count()));
     config.session.read_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "read_timeout_seconds", config.session.read_timeout.count()));
     config.session.write_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "write_timeout_seconds", config.session.write_timeout.count()));
+    config.session.handler_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "handler_timeout_seconds", config.session.handler_timeout.count()));
     config.session.shutdown_timeout = std::chrono::seconds(positive_value<std::int64_t>(session, "shutdown_timeout_seconds", config.session.shutdown_timeout.count()));
     config.session.header_limit = positive_value<std::size_t>(session, "header_limit_bytes", config.session.header_limit);
     config.session.body_limit = positive_value<std::uint64_t>(session, "body_limit_bytes", config.session.body_limit);
@@ -267,6 +268,7 @@ void write_default_application_config(const std::string& path) {
     "handshake_timeout_seconds": 10,
     "read_timeout_seconds": 15,
     "write_timeout_seconds": 15,
+    "handler_timeout_seconds": 30,
     "shutdown_timeout_seconds": 10,
     "header_limit_bytes": 8192,
     "body_limit_bytes": 1048576
