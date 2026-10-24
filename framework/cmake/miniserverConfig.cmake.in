@@ -1,0 +1,19 @@
+@PACKAGE_INIT@
+
+if(POLICY CMP0167)
+    cmake_policy(PUSH)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
+include(CMakeFindDependencyMacro)
+find_dependency(Boost REQUIRED)
+find_dependency(OpenSSL REQUIRED)
+find_dependency(nlohmann_json REQUIRED)
+find_dependency(SQLite3 REQUIRED)
+
+include("${CMAKE_CURRENT_LIST_DIR}/miniserverTargets.cmake")
+check_required_components(miniserver)
+
+if(POLICY CMP0167)
+    cmake_policy(POP)
+endif()

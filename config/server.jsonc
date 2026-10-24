@@ -1,8 +1,10 @@
 {
+  // "api-only" disables static files; "web" serves the files under web_root as a fallback.
   "application": {
     "mode": "web",
     "web_root": "../static"
   },
+  // Bind address and TLS files. 127.0.0.1 restricts access to this machine.
   "server": {
     "address": "127.0.0.1",
     "port": 8443,
@@ -11,6 +13,7 @@
     "max_connections": 1024,
     "worker_threads": 4
   },
+  // Time limits for TLS and HTTP operations, plus request header/body size limits.
   "session": {
     "handshake_timeout_seconds": 10,
     "read_timeout_seconds": 15,
@@ -19,10 +22,12 @@
     "header_limit_bytes": 8192,
     "body_limit_bytes": 1048576
   },
+  // Minimum log severity and optional output file (empty means standard output).
   "logging": {
     "level": "info",
     "file": ""
   },
+  // Request logging and statistics are enabled by default; rate limiting is optional.
   "middleware": {
     "request_logging": {
       "enabled": true
@@ -38,12 +43,14 @@
       "max_tracked_clients": 10000
     }
   },
+  // SQLite file and account-specific email requirement.
   "database": {
     "file": "../data/miniserver.sqlite3",
     "users": {
       "require_email": true
     }
   },
+  // "none" disables authentication; "bearer" enables the example bearer provider.
   "authentication": {
     "provider": "bearer",
     "challenge": "Bearer realm=\"miniserver\"",

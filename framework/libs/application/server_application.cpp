@@ -15,8 +15,11 @@ std::string find_default_config(const std::string& executable_path) {
     if (!error) {
         const fs::path executable_dir = executable.parent_path();
         const fs::path candidates[] = {
+            executable_dir / "config/server.jsonc",
             executable_dir / "config/server.json",
+            executable_dir.parent_path() / "config/server.jsonc",
             executable_dir.parent_path() / "config/server.json",
+            fs::current_path(error) / "config/server.jsonc",
             fs::current_path(error) / "config/server.json"
         };
         for (const auto& candidate : candidates) {
@@ -24,7 +27,13 @@ std::string find_default_config(const std::string& executable_path) {
             if (fs::is_regular_file(candidate, error) && !error) return candidate.string();
         }
     }
-    return "config/server.json";
+
+    const fs::path generated_path = !error
+        ? executable.parent_path().parent_path() / "config/server.jsonc"
+        : fs::path("config/server.jsonc");
+    write_default_application_config(generated_path.string());
+    throw std::runtime_error("No config file was found. A default config was generated at '" +
+        generated_path.string() + "'. Set valid TLS certificate_file and private_key_file paths, then restart.");
 }
 
 std::unique_ptr<database::SQLiteDatabase> make_database(const ApplicationConfig& config) {

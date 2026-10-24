@@ -1,21 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(miniserver LANGUAGES CXX)
+project(miniserver VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
 
-find_package(Boost REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(nlohmann_json REQUIRED)
-find_package(SQLite3 REQUIRED)
-
-add_subdirectory(libs/http/types)
-add_subdirectory(libs/database)
-add_subdirectory(libs/logging)
-add_subdirectory(libs/http/middleware)
-add_subdirectory(libs/server)
-add_subdirectory(libs/http/router)
-add_subdirectory(libs/auth)
-add_subdirectory(libs/application)
+add_subdirectory(framework)
 add_subdirectory(src)
 
 if(BUILD_TESTING)

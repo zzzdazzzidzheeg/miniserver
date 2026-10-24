@@ -4,7 +4,9 @@ add_library(auth
     sqlite_account_service.cpp)
 
 target_compile_features(auth PUBLIC cxx_std_17)
-target_include_directories(auth PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(auth PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include/miniserver/auth>)
 target_link_libraries(auth PUBLIC
     http_types
     middleware

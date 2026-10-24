@@ -23,7 +23,7 @@ db.users.set_confirmed(user_id, true);
 
 `NewUser` accepts a username, optional email, password hash, and confirmation state. `add()` returns the generated integer ID and fails on duplicate usernames or non-empty emails. `find_by_id()`, `find_by_username()`, and `find_by_email()` return `std::optional<UserRecord>`; `set_confirmed()` returns false if the ID does not exist. Lookup text is matched exactly, so applications should normalize usernames/emails consistently before storing and querying them.
 
-Email can be required for repository inserts through `database.users.require_email` in `config/server.json`. The setting defaults to `false`; when enabled, `db.users.add()` throws `std::invalid_argument` if no email is supplied. The example configuration enables it.
+Email can be required for repository inserts through `database.users.require_email` in `config/server.jsonc`. The setting defaults to `false`; when enabled, `db.users.add()` throws `std::invalid_argument` if no email is supplied. The example configuration enables it.
 
 The repository deliberately accepts `password_hash`, not a raw password. Password hashing and verification belong to the application; use a password hashing function intended for passwords, with per-password salt and an adjustable work factor. Do not log password values or hashes. Confirmation tokens and access tokens should be stored separately as hashes and should have expiry and revocation handling.
 

@@ -3,7 +3,9 @@ add_library(miniserver_application
     server_application.cpp)
 
 target_compile_features(miniserver_application PUBLIC cxx_std_17)
-target_include_directories(miniserver_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(miniserver_application PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include/miniserver/application>)
 target_link_libraries(miniserver_application PUBLIC
     server
     router

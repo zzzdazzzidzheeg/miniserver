@@ -50,3 +50,4 @@ struct ApplicationConfig {
 };
 
 ApplicationConfig load_application_config(const std::string& path);
+void write_default_application_config(const std::string& path);

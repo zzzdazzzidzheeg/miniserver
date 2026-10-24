@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 
@@ -23,9 +24,11 @@ T positive_value(const nlohmann::json& object, const char* key, T fallback) {
     return static_cast<T>(value);
 }
 
-const nlohmann::json& object_field(const nlohmann::json& root, const char* key) {
+const nlohmann::json& optional_object_field(const nlohmann::json& root, const char* key) {
+    static const nlohmann::json empty_object = nlohmann::json::object();
     const auto it = root.find(key);
-    if (it == root.end() || !it->is_object()) {
+    if (it == root.end()) return empty_object;
+    if (!it->is_object()) {
         throw std::runtime_error(std::string("Config section '") + key + "' must be an object");
     }
     return *it;
@@ -47,7 +50,9 @@ ApplicationConfig load_application_config(const std::string& path) {
 
     nlohmann::json root;
     try {
-        input >> root;
+        const std::string contents((std::istreambuf_iterator<char>(input)),
+            std::istreambuf_iterator<char>());
+        root = nlohmann::json::parse(contents, nullptr, true, true);
     } catch (const nlohmann::json::exception& error) {
         throw std::runtime_error("Invalid config JSON: " + std::string(error.what()));
     }
@@ -59,9 +64,9 @@ ApplicationConfig load_application_config(const std::string& path) {
         const std::filesystem::path value(configured_path);
         return value.is_absolute() ? value.string() : (config_directory / value).lexically_normal().string();
     };
-    const auto& server = object_field(root, "server");
-    const auto& session = object_field(root, "session");
-    const auto& logging = object_field(root, "logging");
+    const auto& server = optional_object_field(root, "server");
+    const auto& session = optional_object_field(root, "session");
+    const auto& logging = optional_object_field(root, "logging");
 
     if (server.contains("address")) config.server.address = server.at("address").get<std::string>();
     const auto port = positive_value<std::uint32_t>(server, "port", config.server.port);
@@ -214,4 +219,79 @@ ApplicationConfig load_application_config(const std::string& path) {
         throw std::runtime_error("Config field 'database.file' cannot be empty");
     }
     return config;
+}
+
+void write_default_application_config(const std::string& path) {
+    namespace fs = std::filesystem;
+    const fs::path config_path(path);
+    if (fs::exists(config_path)) {
+        throw std::runtime_error("Refusing to overwrite existing config file: " + path);
+    }
+    if (!config_path.parent_path().empty()) {
+        fs::create_directories(config_path.parent_path());
+    }
+
+    std::ofstream output(config_path);
+    if (!output) throw std::runtime_error("Cannot create config file: " + path);
+    output << R"CONFIG({
+  // Application mode: "api-only" serves API routes; "web" also serves files from web_root.
+  "application": {
+    "mode": "api-only",
+    "web_root": "../static"
+  },
+
+  // Listener settings. Replace these certificate paths with your TLS certificate and private key.
+  "server": {
+    "address": "127.0.0.1",
+    "port": 8443,
+    "certificate_file": "../certs/cert.pem",
+    "private_key_file": "../certs/key.pem",
+    "max_connections": 1024,
+    "worker_threads": 4
+  },
+
+  // Per-connection timeouts and request size limits.
+  "session": {
+    "handshake_timeout_seconds": 10,
+    "read_timeout_seconds": 15,
+    "write_timeout_seconds": 15,
+    "shutdown_timeout_seconds": 10,
+    "header_limit_bytes": 8192,
+    "body_limit_bytes": 1048576
+  },
+
+  // Log threshold and optional log file. An empty file writes logs to standard output.
+  "logging": {
+    "level": "info",
+    "file": ""
+  },
+
+  // Built-in request middleware. Rate limiting is disabled until explicitly enabled.
+  "middleware": {
+    "request_logging": { "enabled": true },
+    "statistics": { "enabled": true },
+    "rate_limit": {
+      "enabled": false,
+      "key": "principal-or-ip",
+      "requests": 60,
+      "window_seconds": 60,
+      "max_tracked_clients": 10000
+    }
+  },
+
+  // SQLite account database. Email is optional unless require_email is true.
+  "database": {
+    "file": "../data/miniserver.sqlite3",
+    "users": { "require_email": false }
+  },
+
+  // Select "none" or a registered authentication provider such as "bearer".
+  "authentication": {
+    "provider": "none",
+    "challenge": "Bearer realm=\"miniserver\"",
+    "access_token_lifetime_seconds": 3600
+  }
+}
+)CONFIG";
+    if (!output) throw std::runtime_error("Failed writing config file: " + path);
 }
