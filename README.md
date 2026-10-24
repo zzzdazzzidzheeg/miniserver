@@ -172,11 +172,30 @@ app.run();
 
 Маршруты с `RouteAccess::Authenticated` требуют настроенный аутентификатор. Если middleware аутентификации не подключено или запрос не прошёл проверку, обработчик защищённого маршрута не вызывается. Аутентификация определяет пользователя; прикладные проверки прав на отдельные действия и данные остаются ответственностью обработчика или сервиса.
 
+После успешной аутентификации обработчик получает `context.principal` — `std::optional<Principal>`. Для `RouteAccess::Authenticated` значение гарантированно заполнено. `Principal::subject` — идентификатор, который вернул настроенный аутентификатор; обычно это стабильный ID пользователя, а не отображаемое имя. Чтобы показать персональное приветствие, используйте subject для поиска профиля в своей базе данных или сервисе:
+
+```cpp
+app.add_route("GET", "/api/users/me", RouteAccess::Authenticated,
+    [&users](HttpRequestContext& context) -> HttpResponse {
+        const auto user = users.find_by_id(context.principal->subject);
+        if (!user) {
+            return http_utils::make_error_response(
+                404, "User not found", context.request.version());
+        }
+
+        return http_utils::make_json_response(200,
+            {{"message", "Привет, " + user->display_name + "!"}},
+            context.request.version());
+    });
+```
+
+У публичного маршрута `context.principal` может содержать пользователя, если аутентификатор распознал предъявленные credentials, но приложение должно учитывать, что значение может отсутствовать. Подробности о настройке и обязанностях аутентификатора приведены в [`auth README`](framework/libs/auth/README.md).
+
 Подробности интерфейсов компонентов приведены в README соответствующих библиотек: [`auth`](framework/libs/auth/README.md), [`database`](framework/libs/database/README.md), [`server`](framework/libs/server/README.md).
 
 ## Пример приложения
 
-В `src/main.cpp` зарегистрированы демонстрационные маршруты:
+Демонстрационные обработчики и регистрация маршрутов находятся в `src/handlers.h`; `src/main.cpp` настраивает и запускает приложение. В примере зарегистрированы такие маршруты:
 
 | Метод | Путь | Назначение |
 |---|---|---|

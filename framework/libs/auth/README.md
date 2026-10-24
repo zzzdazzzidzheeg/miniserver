@@ -19,6 +19,8 @@ app.add_route("GET", "/api/profile", RouteAccess::Authenticated,
     });
 ```
 
+`context.principal` имеет тип `std::optional<Principal>`, а `Principal` сейчас содержит поле `subject`. На защищённом маршруте (`RouteAccess::Authenticated`) оно заполнено до вызова обработчика. `subject` задаёт ваш аутентификатор: рекомендуется возвращать стабильный ID пользователя. Это не обязательно имя для показа в интерфейсе. Для приветствия вроде «Привет, Анна» используйте `subject`, чтобы загрузить отображаемое имя из профиля приложения. На публичном маршруте principal может отсутствовать, поэтому проверяйте optional перед использованием.
+
 Select the registered provider in `authentication.provider` in the application config (for example, `"bearer"`). The default `"none"` disables authentication middleware. When a provider is selected, the application must register it before `initialize()`; startup fails if it has not. `authentication.challenge` controls the `WWW-Authenticate` value. Other credential methods can be added as named authenticators and selected through the same config field.
 
 The bearer adapter rejects malformed or missing credentials. It does not accept tokens on its own: token signature/lookup, expiry, revocation, and principal mapping remain the validator's responsibility. Never use an accept-all validator or put live bearer tokens in source-controlled config.

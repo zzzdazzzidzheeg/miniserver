@@ -4,9 +4,16 @@
 #include <nlohmann/json.hpp>
 
 #include <ctime>
+#include <chrono>
+#include <memory>
 #include <string>
 #include <utility>
 
+#include "server_application.h"
+#include "auth_handlers.h"
+#include "sqlite_account_service.h"
+#include "authentication_middleware.h"
+#include "static_file_handler.h"
 #include "response_utils.h"
 
 namespace http = boost::beast::http;
@@ -39,6 +46,13 @@ struct EchoHandler {
             return http_utils::make_error_response(
                 400, "Invalid JSON payload: " + std::string(error.what()), request.version());
         }
+    }
+};
+
+struct CurrentUserHandler {
+    http::response<http::string_body> operator()(HttpRequestContext& context) const {
+        return http_utils::make_json_response(200,
+            {{"subject", context.principal->subject}}, context.request.version());
     }
 };
 
@@ -83,5 +97,52 @@ struct InfoHandler {
         return http_utils::make_json_response(200, response, request.version());
     }
 };
+
+// Registers the example application's routes and optional static-file fallback.
+inline void register_routes(ServerApplication& app) {
+    const auto& config = app.config();
+    const std::string authentication_provider = config.authentication.provider;
+    const ApplicationMode application_mode = config.mode;
+    const std::string web_root = config.web_root;
+    const bool registration_email_required = config.database.require_user_email;
+    const auto access_token_lifetime = std::chrono::seconds(
+        config.authentication.access_token_lifetime_seconds);
+
+    if (authentication_provider == "bearer") {
+        auto accounts = std::make_shared<auth::SQLiteAccountService>(
+            app.database(), access_token_lifetime);
+        app.add_authenticator("bearer", auth::make_bearer_authenticator(
+            [accounts](std::string_view token) { return accounts->authenticate(token); }));
+        app.add_route("POST", "/api/auth/login", RouteAccess::Public,
+            auth::make_login_handler([accounts](std::string_view username,
+                                                 std::string_view password) {
+                return accounts->login(username, password);
+            }));
+        app.add_route("POST", "/api/auth/register", RouteAccess::Public,
+            auth::make_registration_handler([accounts](const nlohmann::json& payload) {
+                return accounts->register_account(payload);
+            }));
+        app.add_route("POST", "/api/auth/logout", RouteAccess::Authenticated,
+            auth::make_logout_handler([accounts](std::string_view token) {
+                return accounts->logout(token);
+            }));
+        app.add_route("DELETE", "/api/auth/me", RouteAccess::Authenticated,
+            auth::make_account_deletion_handler([accounts](std::string_view subject) {
+                return accounts->delete_account(subject);
+            }));
+        app.add_route("GET", "/api/auth/me", RouteAccess::Authenticated,
+            CurrentUserHandler{});
+    }
+
+    app.add_route("GET", "/api/ping", RouteAccess::Public, PingHandler{});
+    app.add_route("GET", "/api/echo", RouteAccess::Public, EchoHandler{});
+    app.add_route("GET", "/api/info", RouteAccess::Public,
+        InfoHandler{"1.0", authentication_provider == "bearer",
+            registration_email_required});
+
+    if (application_mode == ApplicationMode::Web) {
+        app.set_not_found_handler(make_static_file_handler(web_root));
+    }
+}
 
 } // namespace handlers
