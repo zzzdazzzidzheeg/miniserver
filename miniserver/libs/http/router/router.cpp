@@ -67,7 +67,6 @@ void Router::add_async_route(std::string method, std::string path, RouteAccess a
 
 void Router::add_middleware(Middleware middleware) {
     if (!middleware) throw std::invalid_argument("Middleware cannot be empty");
-    has_user_sync_middleware_ = true;
     middleware_.push_back(std::move(middleware));
 }
 
@@ -166,13 +165,6 @@ void Router::route_async(HttpRequest request, std::string client_address,
         completion(route(request, std::move(client_address)));
         return;
     }
-    if (has_user_sync_middleware_) {
-        log_error("Router", "Async route cannot run with synchronous custom middleware; use add_async_middleware");
-        completion(http_utils::make_error_response(
-            500, "Async route middleware configuration error", request.version()));
-        return;
-    }
-
     const bool authentication_required = matched_route->access == RouteAccess::Authenticated;
     auto owned_request = std::make_shared<HttpRequest>(std::move(request));
     auto context = std::make_shared<HttpRequestContext>(std::move(owned_request),

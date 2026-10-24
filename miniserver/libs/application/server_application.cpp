@@ -190,11 +190,6 @@ void ServerApplication::initialize() {
         }));
     }
 
-    if (router_.has_async_routes() && !middlewares_.empty()) {
-        throw std::logic_error(
-            "Async routes require asynchronous middleware; register custom middleware with add_async_middleware");
-    }
-
     server_ = std::make_unique<Server>(config_.server, config_.session,
         [this](HttpRequest request, std::string client_address, ResponseCompletion completion) {
             router_.route_async(std::move(request), std::move(client_address),

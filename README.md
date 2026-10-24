@@ -175,21 +175,22 @@ app.run();
 
 Маршруты с `RouteAccess::Authenticated` требуют настроенный аутентификатор. Если middleware аутентификации не подключено или запрос не прошёл проверку, обработчик защищённого маршрута не вызывается. Аутентификация определяет пользователя; прикладные проверки прав на отдельные действия и данные остаются ответственностью обработчика или сервиса.
 
-Для обработчиков, ожидающих асинхронный результат, есть `add_async_route()` с callback `ResponseCompletion`; middleware для таких маршрутов подключается через `add_async_middleware()`. Контекст запроса владеет HTTP-запросом и может безопасно сохраняться до завершения callback. Пользовательские синхронные middleware нельзя смешивать с async-маршрутами. Асинхронный интерфейс сам по себе не делает блокирующий SQLite или вычисления неблокирующими.
+Для обработчиков, ожидающих асинхронный результат, есть `add_async_route()` с callback `ResponseCompletion`; middleware для таких маршрутов подключается через `add_async_middleware()`. Контекст запроса владеет HTTP-запросом и может безопасно сохраняться до завершения callback. Синхронные и асинхронные пользовательские middleware можно зарегистрировать в одном приложении: синхронная цепочка оборачивает `add_route()`, асинхронная — `add_async_route()`. Каждый стиль применяется только к соответствующим маршрутам. Асинхронный интерфейс сам по себе не делает блокирующий SQLite или вычисления неблокирующими.
 
 После успешной аутентификации обработчик получает `context.principal` — `std::optional<Principal>`. Для `RouteAccess::Authenticated` значение гарантированно заполнено. `Principal::subject` — идентификатор, который вернул настроенный аутентификатор; обычно это стабильный ID пользователя, а не отображаемое имя. Чтобы показать персональное приветствие, используйте subject для поиска профиля в своей базе данных или сервисе:
 
 ```cpp
 app.add_route("GET", "/api/users/me", RouteAccess::Authenticated,
     [&users](HttpRequestContext& context) -> HttpResponse {
-        const auto user = users.find_by_id(context.principal->subject);
+        const auto user_id = std::stoll(context.principal->subject);
+        const auto user = users.find_by_id(user_id);
         if (!user) {
             return http_utils::make_error_response(
                 404, "User not found", context.request.version());
         }
 
         return http_utils::make_json_response(200,
-            {{"message", "Привет, " + user->display_name + "!"}},
+            {{"message", "Привет, " + user->username + "!"}},
             context.request.version());
     });
 ```
@@ -206,6 +207,7 @@ app.add_route("GET", "/api/users/me", RouteAccess::Authenticated,
 |---|---|---|
 | `GET` | `/api/ping` | Проверка доступности |
 | `GET` | `/api/echo` | Возврат данных запроса и времени |
+| `GET` | `/api/async-demo` | Отложенный ответ; демонстрирует async handler и middleware |
 | `GET` | `/api/info` | Информация о сервере и список маршрутов |
 | `POST` | `/api/auth/register` | Регистрация в SQLite при `provider: bearer` |
 | `POST` | `/api/auth/login` | Проверка пароля и выдача токена |
@@ -229,6 +231,8 @@ curl --insecure -X POST https://localhost:8443/api/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.test","password":"example-password"}'
 ```
+
+Для демонстрации асинхронного маршрута запросите `GET /api/async-demo`. В `src/handlers.h` также зарегистрированы sync middleware и async middleware: первый добавляет `X-Demo-Sync-Middleware` к ответам синхронных маршрутов, второй — `X-Demo-Async-Middleware` к ответам асинхронных маршрутов. Их можно проверить по заголовкам ответа.
 
 Вход возвращает bearer-токен. Передавайте его в заголовке `Authorization: Bearer <token>` при запросах к защищённым маршрутам. `/api/auth/logout` отзывает только предъявленный токен.
 

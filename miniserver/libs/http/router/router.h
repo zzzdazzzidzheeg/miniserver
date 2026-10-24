@@ -55,7 +55,6 @@ private:
     // Ключ: "METHOD PATH" (например, "GET /api/status")
     std::unordered_map<std::string, Route> routes_;
     std::vector<Middleware> middleware_;
-    bool has_user_sync_middleware_ = false;
     std::vector<AsyncMiddleware> async_middleware_;
     
     // Обработчик по умолчанию (404)
