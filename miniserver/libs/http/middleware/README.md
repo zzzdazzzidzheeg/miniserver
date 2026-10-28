@@ -1,18 +1,29 @@
 # Middleware
 
-Middleware wraps request routing and can inspect a request, call the next middleware, or return a response early. Middleware is added to the router during application setup, before the server starts.
+Middleware оборачивает обработку запроса: может проверить его, вернуть ранний ответ или передать запрос дальше и обработать ответ. Все middleware регистрируются через `app.add_middleware()` до `app.initialize()` и выполняются в порядке регистрации.
 
 ```cpp
-app.add_middleware([](HttpRequestContext& context, const MiddlewareNext& next) {
-    const auto& request = context.request;
-    if (!request.has(http::field::authorization)) {
-        return HttpResponse{http_utils::make_error_response(
-            401, "Unauthorized", request.version())};
+app.add_middleware([](const std::shared_ptr<HttpRequestContext>& context,
+                      const MiddlewareNext& next, ResponseCompletion complete) {
+    if (context->matched_route && context->matched_route->path == "/api/maintenance") {
+        complete(http_utils::make_error_response(
+            503, "Service unavailable", context->request.version()));
+        return;
     }
-    return next(context);
+
+    next(context, [complete = std::move(complete)](HttpResponse response) mutable {
+        std::visit([](auto& message) {
+            message.set("X-Content-Type-Options", "nosniff");
+        }, response);
+        complete(std::move(response));
+    });
 });
 ```
 
-The router selects the route before starting middleware. Middleware runs in registration order, with the first registered middleware wrapping the rest of the chain. Call `next(context)` at most once when continuing. The context contains the original request, optional `matched_route` metadata (method, path, and access policy), and an optional authenticated principal. A middleware can therefore apply route-specific policy without redoing route matching. `make_request_logging_middleware()` is provided as a built-in example. For route authentication, use the component in `libs/auth/`.
+В примере middleware сразу отклоняет запрос к маршруту на обслуживании, а для остальных ответов добавляет защитный заголовок. Роутер выбирает маршрут до вызова middleware, поэтому доступны `context->matched_route`, `context->principal` и исходный запрос. `next` передаёт работу следующему middleware; `complete` завершает обработку. Вызывайте каждый не больше одного раза. Чтобы изменить ответ после обработчика, передайте в `next` обёртку над `complete`.
 
-For routes registered with `ServerApplication::add_async_route()`, register custom asynchronous middleware with `add_async_middleware()`. It receives a shared request context, an asynchronous `next` function, and a response completion callback. Call `next` and completion at most once. Synchronous and asynchronous custom middleware can coexist in one application: `add_middleware()` wraps synchronous routes registered with `add_route()`, while `add_async_middleware()` wraps asynchronous routes. Each chain runs only for its matching route style. Built-in logging, statistics, authentication, and rate-limit middleware support both route styles.
+Цепочка одна для `add_route()` и `add_async_route()`. Обычный синхронный обработчик выполняется в конце цепочки и сразу передаёт ответ в completion; асинхронный — вызывает completion по готовности. Middleware может выполнять синхронную проверку до `next`, но не должно ждать блокирующую операцию ради async-ответа.
+
+Сигнатура использует shared-контекст, поэтому запрос остаётся доступным до завершения асинхронной обработки. Сервер вызывает обработчики параллельно; состояние, захваченное middleware, должно быть потокобезопасным. `add_async_middleware()` сохранён как совместимый alias для `add_middleware()`.
+
+Встроенные middleware журнала запросов, статистики, аутентификации и ограничения частоты используют ту же цепочку. Для аутентификации используйте компонент из `libs/auth/`, а не реализуйте разбор credentials вручную.

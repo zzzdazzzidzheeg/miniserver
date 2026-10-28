@@ -128,11 +128,11 @@ Framework не навязывает хранилище учётных запис
 
 ## Middleware и статистика
 
-Приложение может добавлять собственные middleware через `app.add_middleware()` до `initialize()`. Middleware вызываются после того, как router выбрал маршрут, поэтому они могут читать `context.matched_route`, `context.principal` и данные запроса, затем продолжать цепочку или вернуть ответ. Эта синхронная цепочка применяется к маршрутам, зарегистрированным через `add_route()`.
+Приложение может добавлять собственные middleware через `app.add_middleware()` до `initialize()`. Роутер сначала выбирает маршрут, затем запускает middleware по порядку регистрации. Все middleware используют callback-интерфейс и одну цепочку для sync- и async-маршрутов. Middleware может читать `context->matched_route`, `context->principal` и запрос, вернуть ответ через `complete` или передать управление через `next`. Пример раннего ответа и изменения ответа находится в [руководстве по middleware](libs/http/middleware/README.md).
 
 Встроенная статистика доступна через `app.request_statistics()`. Она считает запросы, активные запросы, классы HTTP-ответов и отклонения rate limiter. Rate limiter включается настройкой `middleware.rate_limit.enabled`; маршрутные лимиты можно задать через `RouteRateLimit`.
 
-Асинхронный обработчик регистрируется через `add_async_route()`. Он получает `std::shared_ptr<HttpRequestContext>` и `ResponseCompletion`; сохраните копию контекста, если используете его после возврата из обработчика, и вызовите completion ровно один раз. Контекст владеет запросом и остаётся доступен до завершения. Синхронные маршруты продолжают регистрироваться через `add_route()`. Пользовательские middleware для async-маршрутов регистрируются через `add_async_middleware()`. Оба типа middleware могут быть зарегистрированы одновременно: sync цепочка оборачивает sync routes, async цепочка — async routes. `session.handler_timeout_seconds` ограничивает ожидание ответа от async-обработчика.
+Асинхронный обработчик регистрируется через `add_async_route()`. Он получает `std::shared_ptr<HttpRequestContext>` и `ResponseCompletion`; сохраните копию контекста, если используете его после возврата из обработчика, и вызовите completion ровно один раз. Контекст владеет запросом и остаётся доступен до завершения. Синхронные маршруты продолжают регистрироваться через `add_route()` и автоматически завершаются в общей callback-цепочке. `add_async_middleware()` оставлен как alias для `add_middleware()`. `session.handler_timeout_seconds` ограничивает ожидание ответа от async-обработчика.
 
 ## Компоненты
 

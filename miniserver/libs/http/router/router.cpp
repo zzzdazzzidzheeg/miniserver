@@ -3,7 +3,9 @@
 #include "response_utils.h" // Подключаем наши утилиты для ответов
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <future>
 #include <stdexcept>
 
 namespace {
@@ -76,8 +78,7 @@ void Router::add_builtin_middleware(Middleware middleware) {
 }
 
 void Router::add_async_middleware(AsyncMiddleware middleware) {
-    if (!middleware) throw std::invalid_argument("Async middleware cannot be empty");
-    async_middleware_.push_back(std::move(middleware));
+    add_middleware(std::move(middleware));
 }
 
 bool Router::has_async_routes() const noexcept {
@@ -94,54 +95,14 @@ void Router::set_not_found_handler(Handler handler) {
 
 HttpResponse Router::route(const http::request<http::string_body>& req,
                            std::string client_address) const {
-    const ParsedUrl parsed_url = parse_url(req.target());
-    const Route* matched_route = nullptr;
-    std::optional<RouteMetadata> route_metadata;
-    if (parsed_url.valid) {
-        const std::string path = path_from_url(parsed_url);
-        const std::string method = normalize_method(std::string(req.method_string()));
-        const std::string key = method + " " + path;
-        const auto route = routes_.find(key);
-        if (route != routes_.end()) {
-            matched_route = &route->second;
-            route_metadata = RouteMetadata{method, path, route->second.access,
-                route->second.rate_limit};
-        }
-    }
-    const bool authentication_required = matched_route &&
-        matched_route->access == RouteAccess::Authenticated;
-    HttpRequestContext context(req, authentication_required, std::move(client_address),
-        std::move(route_metadata));
-
-    MiddlewareNext next = [this, matched_route, target_valid = parsed_url.valid,
-                           target_error = parsed_url.error](HttpRequestContext& request_context) {
-        return dispatch_request(request_context, matched_route, target_valid, target_error);
-    };
-
-    for (auto it = middleware_.rbegin(); it != middleware_.rend(); ++it) {
-        Middleware current = *it;
-        MiddlewareNext downstream = std::move(next);
-        next = [current = std::move(current), downstream = std::move(downstream)](
-            HttpRequestContext& request_context) {
-            try {
-                return current(request_context, downstream);
-            } catch (const std::exception& error) {
-                log_error("Router", "Middleware exception: " + std::string(error.what()));
-                return HttpResponse{http_utils::make_error_response(
-                    500, "Internal server error", request_context.request.version())};
-            } catch (...) {
-                log_error("Router", "Unknown middleware exception");
-                return HttpResponse{http_utils::make_error_response(
-                    500, "Internal server error", request_context.request.version())};
-            }
-        };
-    }
-
-    if (matched_route && matched_route->async_handler) {
-        return http_utils::make_error_response(
-            500, "Asynchronous route requires asynchronous dispatch", req.version());
-    }
-    return next(context);
+    auto result = std::make_shared<std::promise<HttpResponse>>();
+    auto future = result->get_future();
+    route_async(HttpRequest(req), std::move(client_address),
+        [result](HttpResponse response) mutable {
+            try { result->set_value(std::move(response)); }
+            catch (const std::future_error&) {}
+        });
+    return future.get();
 }
 
 void Router::route_async(HttpRequest request, std::string client_address,
@@ -161,34 +122,62 @@ void Router::route_async(HttpRequest request, std::string client_address,
         }
     }
 
-    if (!matched_route || !matched_route->async_handler) {
-        completion(route(request, std::move(client_address)));
-        return;
-    }
-    const bool authentication_required = matched_route->access == RouteAccess::Authenticated;
+    const bool authentication_required = matched_route &&
+        matched_route->access == RouteAccess::Authenticated;
     auto owned_request = std::make_shared<HttpRequest>(std::move(request));
     auto context = std::make_shared<HttpRequestContext>(std::move(owned_request),
         authentication_required, std::move(client_address), std::move(route_metadata));
 
-    AsyncMiddlewareNext next = [this, matched_route, valid_target = parsed_url.valid,
+    MiddlewareNext next = [this, matched_route, valid_target = parsed_url.valid,
         target_error = parsed_url.error](const auto& request_context, ResponseCompletion done) {
         dispatch_async(request_context, matched_route, valid_target, target_error,
             std::move(done));
     };
-    for (auto it = async_middleware_.rbegin(); it != async_middleware_.rend(); ++it) {
-        AsyncMiddleware current = *it;
-        AsyncMiddlewareNext downstream = std::move(next);
+    for (auto it = middleware_.rbegin(); it != middleware_.rend(); ++it) {
+        Middleware current = *it;
+        MiddlewareNext downstream = std::move(next);
         next = [current = std::move(current), downstream = std::move(downstream)](
                 const auto& request_context, ResponseCompletion done) {
+            auto completed = std::make_shared<std::atomic<bool>>(false);
+            auto continued = std::make_shared<std::atomic<bool>>(false);
+            ResponseCompletion finish_once = [completed, done = std::move(done)](
+                    HttpResponse response) mutable {
+                if (!completed->exchange(true, std::memory_order_relaxed)) {
+                    done(std::move(response));
+                }
+            };
+            MiddlewareNext next_once = [continued, downstream, finish_once](
+                    const auto& next_context, ResponseCompletion next_completion) mutable {
+                if (continued->exchange(true, std::memory_order_relaxed)) return;
+                auto downstream_completed = std::make_shared<std::atomic<bool>>(false);
+                downstream(next_context, [downstream_completed, next_context,
+                        next_completion = std::move(next_completion), finish_once](
+                            HttpResponse response) mutable {
+                    if (!downstream_completed->exchange(true, std::memory_order_relaxed)) {
+                        try {
+                            next_completion(std::move(response));
+                        } catch (const std::exception& error) {
+                            log_error("Router", "Middleware completion exception: " +
+                                std::string(error.what()));
+                            finish_once(http_utils::make_error_response(
+                                500, "Internal server error", next_context->request.version()));
+                        } catch (...) {
+                            log_error("Router", "Unknown middleware completion exception");
+                            finish_once(http_utils::make_error_response(
+                                500, "Internal server error", next_context->request.version()));
+                        }
+                    }
+                });
+            };
             try {
-                current(request_context, downstream, done);
+                current(request_context, next_once, finish_once);
             } catch (const std::exception& error) {
                 log_error("Router", "Async middleware exception: " + std::string(error.what()));
-                done(http_utils::make_error_response(500, "Internal server error",
+                finish_once(http_utils::make_error_response(500, "Internal server error",
                     request_context->request.version()));
             } catch (...) {
                 log_error("Router", "Unknown async middleware exception");
-                done(http_utils::make_error_response(500, "Internal server error",
+                finish_once(http_utils::make_error_response(500, "Internal server error",
                     request_context->request.version()));
             }
         };
@@ -204,6 +193,18 @@ void Router::dispatch_async(const std::shared_ptr<HttpRequestContext>& context,
     if (!valid_target) {
         completion(http_utils::make_error_response(
             400, "Invalid request target: " + target_error, request.version()));
+        return;
+    }
+    if (!route) {
+        try {
+            completion(default_handler_(*context));
+        } catch (const std::exception& error) {
+            log_error("Router", "Not-found handler exception: " + std::string(error.what()));
+            completion(http_utils::make_error_response(500, "Internal server error", request.version()));
+        } catch (...) {
+            log_error("Router", "Unknown not-found handler exception");
+            completion(http_utils::make_error_response(500, "Internal server error", request.version()));
+        }
         return;
     }
     if (route->access == RouteAccess::Authenticated && !context->principal) {
@@ -230,57 +231,5 @@ void Router::dispatch_async(const std::shared_ptr<HttpRequestContext>& context,
     } catch (...) {
         log_error("Router", "Unknown async handler exception");
         completion(http_utils::make_error_response(500, "Internal server error", request.version()));
-    }
-}
-
-HttpResponse Router::dispatch_request(HttpRequestContext& context, const Route* route,
-                                      bool valid_target, const std::string& target_error) const {
-    const auto& req = context.request;
-    if (!valid_target) {
-        log_warning("Router", "Invalid request target");
-        return http_utils::make_error_response(
-            400, "Invalid request target: " + target_error, req.version());
-    }
-
-    if (route) {
-        if (route->access == RouteAccess::Authenticated && !context.principal) {
-            if (context.authentication_checked()) {
-                auto response = http_utils::make_error_response(
-                    401, "Authentication required", req.version());
-                response.set(http::field::www_authenticate, context.authentication_challenge());
-                return response;
-            }
-            log_error("Router", "Protected route has no configured authenticator");
-            return http_utils::make_error_response(500, "Internal server error", req.version());
-        }
-        // Маршрут найден. Выполняем обработчик.
-        try {
-            return route->handler(context);
-        } 
-        catch (const std::exception& e) {
-            log_error("Router", "Handler exception: " + std::string(e.what()));
-            // Если обработчик упал с исключением, возвращаем 500
-            return http_utils::make_error_response(
-                500,
-                "Internal server error",
-                req.version()
-            );
-        } 
-        catch (...) {
-            log_error("Router", "Unknown handler exception");
-            // Перехват любых других неизвестных исключений
-            return http_utils::make_error_response(500, "Unknown internal error", req.version());
-        }
-    }
-
-    // Маршрут не найден, вызываем обработчик по умолчанию
-    try {
-        return default_handler_(context);
-    } catch (const std::exception& error) {
-        log_error("Router", "Not-found handler exception: " + std::string(error.what()));
-        return http_utils::make_error_response(500, "Internal server error", req.version());
-    } catch (...) {
-        log_error("Router", "Unknown not-found handler exception");
-        return http_utils::make_error_response(500, "Internal server error", req.version());
     }
 }

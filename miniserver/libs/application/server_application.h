@@ -47,7 +47,6 @@ private:
     std::unique_ptr<database::SQLiteDatabase> database_;
     std::shared_ptr<RequestStatistics> request_statistics_;
     std::vector<Middleware> middlewares_;
-    std::vector<AsyncMiddleware> async_middlewares_;
     std::map<std::string, auth::Authenticator> authenticators_;
     Router router_;
     std::unique_ptr<Server> server_;

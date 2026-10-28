@@ -124,21 +124,12 @@ inline void register_routes(ServerApplication& app) {
     const auto access_token_lifetime = std::chrono::seconds(
         config.authentication.access_token_lifetime_seconds);
 
-    // Synchronous middleware wraps synchronous routes; asynchronous middleware
-    // wraps deferred routes. Both styles can be registered in the same app.
-    app.add_middleware([](HttpRequestContext& context, const MiddlewareNext& next) {
-        auto response = next(context);
-        std::visit([](auto& message) {
-            message.set("X-Demo-Sync-Middleware", "applied");
-        }, response);
-        return response;
-    });
-    app.add_async_middleware([](const std::shared_ptr<HttpRequestContext>& context,
-                                const AsyncMiddlewareNext& next,
-                                ResponseCompletion completion) {
+    // One middleware chain wraps both synchronous and deferred routes.
+    app.add_middleware([](const std::shared_ptr<HttpRequestContext>& context,
+                          const MiddlewareNext& next, ResponseCompletion completion) {
         next(context, [completion = std::move(completion)](HttpResponse response) mutable {
             std::visit([](auto& message) {
-                message.set("X-Demo-Async-Middleware", "applied");
+                message.set("X-Demo-Middleware", "applied");
             }, response);
             completion(std::move(response));
         });

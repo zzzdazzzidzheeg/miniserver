@@ -27,10 +27,13 @@ public:
                          std::optional<RouteRateLimit> rate_limit = std::nullopt);
     void add_middleware(Middleware middleware);
     void add_builtin_middleware(Middleware middleware);
+    // Kept as a source-compatible alias; both registration methods add to the
+    // same callback-based middleware chain.
     void add_async_middleware(AsyncMiddleware middleware);
     void set_not_found_handler(Handler handler);
     
     // Основной метод маршрутизации
+    // Blocking convenience API. Server code should use route_async().
     HttpResponse route(const http::request<http::string_body>& req,
                        std::string client_address = {}) const;
     void route_async(HttpRequest request, std::string client_address,
@@ -46,8 +49,6 @@ private:
         std::optional<RouteRateLimit> rate_limit;
     };
 
-    HttpResponse dispatch_request(HttpRequestContext& context, const Route* route,
-                                  bool valid_target, const std::string& target_error) const;
     void dispatch_async(const std::shared_ptr<HttpRequestContext>& context, const Route* route,
                        bool valid_target, const std::string& target_error,
                        ResponseCompletion completion) const;
@@ -55,7 +56,6 @@ private:
     // Ключ: "METHOD PATH" (например, "GET /api/status")
     std::unordered_map<std::string, Route> routes_;
     std::vector<Middleware> middleware_;
-    std::vector<AsyncMiddleware> async_middleware_;
     
     // Обработчик по умолчанию (404)
     Handler default_handler_;

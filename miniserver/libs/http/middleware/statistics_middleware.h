@@ -28,10 +28,6 @@ private:
     friend Middleware make_request_statistics_middleware(std::shared_ptr<RequestStatistics>);
     friend Middleware make_rate_limit_middleware(std::shared_ptr<RequestStatistics>,
         RateLimitConfig);
-    friend AsyncMiddleware make_async_request_statistics_middleware(
-        std::shared_ptr<RequestStatistics>);
-    friend AsyncMiddleware make_async_rate_limit_middleware(
-        std::shared_ptr<RequestStatistics>, RateLimitConfig);
 
     std::atomic<std::uint64_t> total_requests_{0};
     std::atomic<std::uint64_t> active_requests_{0};
@@ -54,6 +50,7 @@ Middleware make_request_statistics_middleware(std::shared_ptr<RequestStatistics>
 
 Middleware make_rate_limit_middleware(std::shared_ptr<RequestStatistics> statistics,
     RateLimitConfig config);
+// Compatibility aliases for callers using the previous async-specific names.
 AsyncMiddleware make_async_request_statistics_middleware(
     std::shared_ptr<RequestStatistics> statistics);
 AsyncMiddleware make_async_rate_limit_middleware(std::shared_ptr<RequestStatistics> statistics,
